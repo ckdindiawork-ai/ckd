@@ -1,6 +1,7 @@
 /**
  * API client - thin fetch wrapper handling auth token + base URL.
  */
+import { Platform } from "react-native";
 import { storage } from "@/src/utils/storage";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -48,32 +49,62 @@ async function request(path: string, opts: RequestInit = {}) {
   return data;
 }
 
+function inferMime(uri: string, kind: "image" | "video", fallbackExt?: string) {
+  const ext = (uri.split(/[?#]/)[0].split(".").pop() || fallbackExt || (kind === "image" ? "jpg" : "mp4")).toLowerCase();
+  if (kind === "image") {
+    if (ext === "png") return { mime: "image/png", ext };
+    if (ext === "webp") return { mime: "image/webp", ext };
+    if (ext === "heic" || ext === "heif") return { mime: "image/heic", ext };
+    return { mime: "image/jpeg", ext: "jpg" };
+  }
+  if (ext === "mov") return { mime: "video/quicktime", ext };
+  if (ext === "webm") return { mime: "video/webm", ext };
+  return { mime: "video/mp4", ext: "mp4" };
+}
+
 export const api = {
   get: (p: string) => request(p),
   post: (p: string, body?: any) => request(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: (p: string, body?: any) => request(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   del: (p: string) => request(p, { method: "DELETE" }),
-  upload: async (uri: string, kind: "image" | "video") => {
+  /**
+   * Cross-platform Cloudinary upload via backend.
+   * - Web: converts the local/blob URI to a real Blob (FormData {uri} shape does not work on web).
+   * - Native: sends the {uri, name, type} shape which React Native turns into multipart.
+   */
+  upload: async (uri: string, kind: "image" | "video", onProgress?: (pct: number) => void) => {
     const token = await loadToken();
-    const ext = uri.split(".").pop()?.toLowerCase() || (kind === "image" ? "jpg" : "mp4");
-    const mime =
-      kind === "image"
-        ? ext === "png"
-          ? "image/png"
-          : "image/jpeg"
-        : ext === "mov"
-          ? "video/quicktime"
-          : "video/mp4";
+    const { mime, ext } = inferMime(uri, kind);
     const fd = new FormData();
     fd.append("kind", kind);
-    fd.append("file", { uri, name: `upload.${ext}`, type: mime } as any);
-    const res = await fetch(`${BASE}/api/media/upload`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: fd,
+
+    if (Platform.OS === "web") {
+      const blobRes = await fetch(uri);
+      const blob = await blobRes.blob();
+      const name = `upload.${ext}`;
+      const file = new File([blob], name, { type: blob.type || mime });
+      fd.append("file", file);
+    } else {
+      fd.append("file", { uri, name: `upload.${ext}`, type: mime } as any);
+    }
+
+    // Use XHR for progress on web/native (fetch lacks upload progress).
+    const url = `${BASE}/api/media/upload`;
+    return await new Promise<any>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        let data: any = {};
+        try { data = JSON.parse(xhr.responseText || "{}"); } catch { data = { detail: xhr.responseText }; }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.detail || `अपलोड विफल (${xhr.status})`));
+      };
+      xhr.onerror = () => reject(new Error("नेटवर्क त्रुटि — कृपया दोबारा कोशिश करें"));
+      xhr.send(fd);
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Upload failed");
-    return data;
   },
 };

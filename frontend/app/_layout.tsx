@@ -14,6 +14,7 @@ import { Mukta_500Medium, Mukta_700Bold, Mukta_800ExtraBold } from "@expo-google
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
+import { ToastProvider } from "@/src/components/Toast";
 
 // Keep the native splash visible from cold start until icon fonts register.
 SplashScreen.preventAutoHideAsync();
@@ -41,8 +42,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#F6F5FA" } }} />
+        <ToastProvider>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#F6F5FA" } }} />
+        </ToastProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

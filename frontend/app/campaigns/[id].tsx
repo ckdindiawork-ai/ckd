@@ -11,6 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button, Card, Pill, TText } from "@/src/components/ui";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useToast } from "@/src/components/Toast";
+import { shareCampaign } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { formatDate, timeAgo } from "@/src/utils/format";
 
@@ -18,14 +20,24 @@ export default function CampaignDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [c, setC] = useState<any>(null);
   const [updates, setUpdates] = useState<any[]>([]);
   const [joining, setJoining] = useState(false);
   const [newText, setNewText] = useState("");
   const [media, setMedia] = useState<{ url: string; type: string } | null>(null);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [posting, setPosting] = useState(false);
   const [openCmt, setOpenCmt] = useState<string | null>(null);
   const [cmtText, setCmtText] = useState("");
+
+  const onShare = async () => {
+    if (!c) return;
+    const res = await shareCampaign(c);
+    if (res.ok) toast.success("शेयर हो गया");
+    else if (res.mode !== "cancelled") toast.error("शेयर नहीं हो सका");
+  };
 
   const load = useCallback(async () => {
     const camp = await api.get(`/campaigns/${id}`);
@@ -42,26 +54,37 @@ export default function CampaignDetail() {
     try {
       await api.post(`/campaigns/${id}/join`);
       await load();
-    } catch (e: any) { Alert.alert("त्रुटि", e.message); } finally { setJoining(false); }
+      toast.success("अभियान से जुड़ गए! +10 क्रांति पॉइंट्स");
+    } catch (e: any) { toast.error(e.message || "जुड़ नहीं सके"); } finally { setJoining(false); }
   };
 
   const pick = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return;
+    if (status !== "granted") return toast.error("गैलरी अनुमति चाहिए");
     const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
-    if (!r.canceled && r.assets[0]) {
-      try { const u = await api.upload(r.assets[0].uri, "image"); setMedia({ url: u.url, type: "image" }); } catch {}
+    if (r.canceled || !r.assets[0]) return;
+    setUploadingMedia(true);
+    setUploadPct(0);
+    try {
+      const u = await api.upload(r.assets[0].uri, "image", (p) => setUploadPct(p));
+      setMedia({ url: u.url, type: "image" });
+      toast.success("फ़ोटो अपलोड हो गई");
+    } catch (e: any) {
+      toast.error(e.message || "फ़ोटो अपलोड नहीं हो पाई");
+    } finally {
+      setUploadingMedia(false);
     }
   };
 
   const postUpdate = async () => {
-    if (!newText.trim() && !media) return;
+    if (!newText.trim() && !media) return toast.error("टेक्स्ट या फ़ोटो जोड़ें");
     setPosting(true);
     try {
       await api.post(`/campaigns/${id}/updates`, { text: newText, media_url: media?.url, media_type: media?.type });
       setNewText(""); setMedia(null);
       await load();
-    } catch (e: any) { Alert.alert("त्रुटि", e.message); } finally { setPosting(false); }
+      toast.success("अपडेट पोस्ट हो गया! +5 पॉइंट्स");
+    } catch (e: any) { toast.error(e.message || "पोस्ट विफल"); } finally { setPosting(false); }
   };
 
   const like = async (uid: string) => {
@@ -142,6 +165,13 @@ export default function CampaignDetail() {
               </View>
             )}
 
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+              <Pressable style={styles.shareBig} onPress={onShare} testID="campaign-share-large">
+                <Ionicons name="share-social" size={18} color={colors.primary} />
+                <TText weight="bold" style={{ color: colors.primary }}>शेयर करें</TText>
+              </Pressable>
+            </View>
+
             {/* Update composer (members only) */}
             {isJoined && (
               <Card style={{ marginTop: 20 }}>
@@ -163,12 +193,20 @@ export default function CampaignDetail() {
                     </Pressable>
                   </View>
                 )}
+                {uploadingMedia && (
+                  <View style={{ marginTop: 8 }}>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${uploadPct}%` }]} />
+                    </View>
+                    <TText style={{ fontSize: 11, color: colors.muted, marginTop: 4 }}>अपलोड {uploadPct}%</TText>
+                  </View>
+                )}
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-                  <Pressable onPress={pick} style={{ flexDirection: "row", alignItems: "center", gap: 6 }} testID="campaign-update-pick">
+                  <Pressable onPress={pick} disabled={uploadingMedia} style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: uploadingMedia ? 0.6 : 1 }} testID="campaign-update-pick">
                     <Ionicons name="image" size={18} color={colors.primary} />
-                    <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>फ़ोटो जोड़ें</TText>
+                    <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>{uploadingMedia ? "अपलोड..." : "फ़ोटो जोड़ें"}</TText>
                   </Pressable>
-                  <Button label="पोस्ट करें" icon="send" onPress={postUpdate} loading={posting} style={{ paddingVertical: 10, paddingHorizontal: 14 }} testID="campaign-update-submit" />
+                  <Button label="पोस्ट करें" icon="send" onPress={postUpdate} loading={posting} disabled={uploadingMedia} style={{ paddingVertical: 10, paddingHorizontal: 14 }} testID="campaign-update-submit" />
                 </View>
               </Card>
             )}
@@ -239,4 +277,7 @@ const styles = StyleSheet.create({
   commentItem: { backgroundColor: colors.bg, padding: 10, borderRadius: 10, marginTop: 6 },
   cmtInput: { flex: 1, backgroundColor: colors.bg, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, fontFamily: fonts.body, color: colors.text },
   cmtSend: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  shareBig: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "40", backgroundColor: colors.primary + "08" },
+  progressTrack: { width: "100%", height: 6, borderRadius: 3, backgroundColor: colors.primary + "12", overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: colors.accent },
 });

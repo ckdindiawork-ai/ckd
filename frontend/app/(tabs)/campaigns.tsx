@@ -9,15 +9,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { Card, EmptyState, TText, Pill } from "@/src/components/ui";
+import { useToast } from "@/src/components/Toast";
+import { shareCampaign } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { formatDate } from "@/src/utils/format";
 
 export default function Campaigns() {
   const router = useRouter();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"all" | "city">("all");
+
+  const onShare = async (c: any) => {
+    const res = await shareCampaign(c);
+    if (res.ok) toast.success("शेयर हो गया");
+    else if (res.mode !== "cancelled") toast.error("शेयर नहीं हो सका");
+  };
 
   const load = useCallback(async () => {
     const q = filter === "city" && user?.city ? `?city=${encodeURIComponent(user.city)}` : "";
@@ -74,9 +83,15 @@ export default function Campaigns() {
                     <Ionicons name="people" size={14} color={colors.primary} />
                     <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>{item.member_count} सदस्य जुड़े</TText>
                   </View>
-                  <View style={styles.joinBtn}>
-                    <TText weight="bold" style={{ color: colors.text, fontSize: 12 }}>विस्तार से देखें</TText>
-                    <Ionicons name="arrow-forward" size={14} color={colors.text} />
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Pressable onPress={(e) => { e.stopPropagation?.(); onShare(item); }} style={styles.shareBtn} testID={`campaign-share-${item.id}`}>
+                      <Ionicons name="share-social" size={14} color={colors.primary} />
+                      <TText weight="bold" style={{ color: colors.primary, fontSize: 12 }}>शेयर</TText>
+                    </Pressable>
+                    <View style={styles.joinBtn}>
+                      <TText weight="bold" style={{ color: colors.text, fontSize: 12 }}>विस्तार</TText>
+                      <Ionicons name="arrow-forward" size={14} color={colors.text} />
+                    </View>
                   </View>
                 </View>
               </View>
@@ -97,4 +112,5 @@ const styles = StyleSheet.create({
   cover: { width: "100%", height: 160, backgroundColor: colors.primary + "10" },
   metaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
   joinBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.accent, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
+  shareBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1.5, borderColor: colors.primary + "40" },
 });

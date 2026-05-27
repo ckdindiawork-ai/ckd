@@ -1,7 +1,7 @@
 /**
  * Profile tab - user info, kranti points, my activity, leaderboard, admin link.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,16 +9,37 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth";
 import { api } from "@/src/api";
-import { Card, EmptyState, StatusBadge, TText } from "@/src/components/ui";
+import { Button, Card, EmptyState, StatusBadge, TText } from "@/src/components/ui";
+import { MembershipCard } from "@/src/components/MembershipCard";
+import { useToast } from "@/src/components/Toast";
+import { shareMembershipCard } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { timeAgo } from "@/src/utils/format";
 
 export default function Profile() {
   const router = useRouter();
   const { user, signOut, refresh } = useAuth();
+  const { toast } = useToast();
+  const cardRef = useRef<View>(null);
   const [activity, setActivity] = useState<any>({ campaigns: [], issues: [], contributions: [] });
   const [tab, setTab] = useState<"campaigns" | "issues" | "contributions">("campaigns");
   const [refreshing, setRefreshing] = useState(false);
+  const [sharingCard, setSharingCard] = useState(false);
+
+  const onShareCard = async () => {
+    if (!user) return;
+    setSharingCard(true);
+    try {
+      const res = await shareMembershipCard(cardRef, user.name || "साथी");
+      if (res.ok) {
+        toast.success(res.mode === "download" ? "कार्ड डाउनलोड हो गया" : "कार्ड साझा हो गया");
+      } else if (res.mode !== "cancelled") {
+        toast.error("कार्ड साझा नहीं हो सका");
+      }
+    } finally {
+      setSharingCard(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +118,26 @@ export default function Profile() {
         </LinearGradient>
 
         <View style={{ padding: spacing.lg }}>
+          {/* Membership card */}
+          <View style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <TText weight="display" style={{ fontSize: 16 }}>डिजिटल सदस्यता कार्ड</TText>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Ionicons name="shield-checkmark" size={12} color={colors.success} />
+                <TText weight="bold" style={{ color: colors.success, fontSize: 11 }}>सत्यापित</TText>
+              </View>
+            </View>
+            <MembershipCard ref={cardRef} user={user} />
+            <Button
+              label={sharingCard ? "तैयार हो रहा है..." : "कार्ड डाउनलोड या साझा करें"}
+              icon="share-social"
+              loading={sharingCard}
+              onPress={onShareCard}
+              style={{ marginTop: 12 }}
+              testID="profile-share-card"
+            />
+          </View>
+
           {/* Action cards */}
           <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
             <ActionTile icon="trophy" label="लीडरबोर्ड" onPress={() => router.push("/leaderboard")} testID="profile-leaderboard" />
