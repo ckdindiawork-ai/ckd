@@ -1,10 +1,35 @@
 /**
  * API client - thin fetch wrapper handling auth token + base URL.
+ *
+ * BASE URL resolution (in priority order):
+ *   1. EXPO_PUBLIC_BACKEND_URL from .env / eas.json env injection (build-time inlined)
+ *   2. Hard-coded production fallback so a packaged APK still works even if env
+ *      injection silently fails during EAS Build.
+ *
+ * If you fork this repo to a different backend, change PROD_FALLBACK below.
  */
 import { Platform } from "react-native";
 import { storage } from "@/src/utils/storage";
 
-const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+const PROD_FALLBACK = "https://grassroot-action.preview.emergentagent.com";
+
+function resolveBase(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_BACKEND_URL;
+  if (fromEnv && typeof fromEnv === "string" && fromEnv.startsWith("http")) return fromEnv.replace(/\/+$/, "");
+  // On web, prefer the current origin so /api proxying works in any deployment.
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin.replace(/\/+$/, "");
+  }
+  return PROD_FALLBACK;
+}
+
+const BASE = resolveBase();
+// One-shot log so the active URL is visible in `adb logcat` / Metro on first request.
+if (__DEV__ || Platform.OS !== "web") {
+  // eslint-disable-next-line no-console
+  console.log("[ckd-api] BASE =", BASE);
+}
+
 const TOKEN_KEY = "ckd_token";
 
 let cachedToken: string | null = null;
