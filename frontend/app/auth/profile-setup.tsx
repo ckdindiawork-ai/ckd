@@ -1,5 +1,5 @@
 /**
- * Profile setup screen - city/area/age + name/photo + consent.
+ * Profile setup screen - state/city/area/age + name/photo/phone + consent.
  * Uses cascade State -> City -> Area picker.
  */
 import React, { useState } from "react";
@@ -20,8 +20,8 @@ export default function ProfileSetup() {
   const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [name, setName] = useState(user?.name || "");
-  const [email, setEmail] = useState(user?.email || "");
-  const [location, setLocation] = useState<LocationValue>({ state: "", city: user?.city || "", area: user?.area || "" });
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [location, setLocation] = useState<LocationValue>({ state: user?.state || "", city: user?.city || "", area: user?.area || "" });
   const [age, setAge] = useState(user?.age_group || "");
   const [photo, setPhoto] = useState(user?.photo_url || "");
   const [consent, setConsent] = useState(false);
@@ -32,7 +32,7 @@ export default function ProfileSetup() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return toast.error("फ़ोटो चुनने के लिए गैलरी की अनुमति दें");
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.7,
@@ -61,9 +61,14 @@ export default function ProfileSetup() {
     setLoading(true);
     try {
       const u = await api.post("/auth/profile-setup", {
-        name, email: email || null,
-        city: location.city, area: location.area,
-        age_group: age, photo_url: photo || null, consent: true,
+        name,
+        phone: phone.trim() || null,
+        state: location.state,
+        city: location.city,
+        area: location.area,
+        age_group: age,
+        photo_url: photo || null,
+        consent: true,
       });
       updateUser(u);
       toast.success("स्वागत है क्रांतिकारी!");
@@ -99,8 +104,8 @@ export default function ProfileSetup() {
           <Label text="पूरा नाम *" />
           <TextInput value={name} onChangeText={setName} placeholder="जैसे: राहुल वर्मा" placeholderTextColor={colors.muted} style={styles.input} testID="profile-name-input" />
 
-          <Label text="ईमेल (वैकल्पिक)" />
-          <TextInput value={email} onChangeText={setEmail} placeholder="email@example.com" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} testID="profile-email-input" />
+          <Label text="मोबाइल नंबर (वैकल्पिक)" />
+          <TextInput value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, "").slice(0, 10))} placeholder="10 अंक का मोबाइल" placeholderTextColor={colors.muted} keyboardType="phone-pad" maxLength={10} style={styles.input} testID="profile-phone-input" />
 
           <View style={{ marginTop: 18 }}>
             <LocationPicker value={location} onChange={setLocation} testIDPrefix="profile-loc" />

@@ -1,5 +1,6 @@
 /**
- * Email + password login + Google one-tap + forgot password + signup CTA.
+ * Email + password signup. After success, redirect to profile-setup which
+ * collects the remaining profile fields (state/city/area/age/phone/photo).
  */
 import React, { useState } from "react";
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -13,27 +14,36 @@ import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/Toast";
 import { colors, fonts, LOGO_URL, radius, spacing } from "@/src/theme";
 
-export default function Login() {
+export default function Signup() {
   const router = useRouter();
   const { signIn, signInWithGoogle } = useAuth();
   const { toast } = useToast();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   const submit = async () => {
-    if (!email.trim()) return toast.error("ईमेल भरें");
-    if (!password) return toast.error("पासवर्ड भरें");
+    if (!name.trim()) return toast.error("पूरा नाम भरें");
+    if (!email.trim() || !email.includes("@")) return toast.error("सही ईमेल भरें");
+    if (password.length < 8) return toast.error("पासवर्ड कम से कम 8 अक्षरों का हो");
+    if (password !== confirm) return toast.error("दोनों पासवर्ड मेल नहीं खाते");
     setLoading(true);
     try {
-      const r = await api.post("/auth/login", { email: email.trim().toLowerCase(), password });
+      const r = await api.post("/auth/signup", {
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+        confirm_password: confirm,
+      });
       await signIn(r.token, r.user);
-      if (!r.user.profile_complete) router.replace("/auth/profile-setup");
-      else router.replace("/(tabs)/home");
+      toast.success("स्वागत है क्रांतिकारी!");
+      router.replace("/auth/profile-setup");
     } catch (e: any) {
-      toast.error(e?.message || "लॉग इन विफल");
+      toast.error(e?.message || "साइन-अप विफल");
     } finally {
       setLoading(false);
     }
@@ -47,7 +57,6 @@ export default function Login() {
         if (r.error && r.error !== "रद्द किया गया") toast.error(r.error);
         return;
       }
-      // On web the page is about to redirect; nothing more to do.
       if (Platform.OS === "web") return;
       router.replace("/");
     } finally {
@@ -61,22 +70,32 @@ export default function Login() {
         <SafeAreaView edges={["top"]}>
           <View style={styles.headerInner}>
             <Image source={{ uri: LOGO_URL }} style={styles.logo} resizeMode="contain" />
-            <TText weight="display" style={styles.brand}>क्रांति दल</TText>
-            <TText weight="bold" style={styles.tag}>युवा जागे, देश बदले</TText>
+            <TText weight="display" style={styles.brand}>नया खाता बनाएँ</TText>
+            <TText weight="bold" style={styles.tag}>आंदोलन का हिस्सा बनिए</TText>
           </View>
         </SafeAreaView>
       </LinearGradient>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView style={styles.sheet} contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing["3xl"] }} keyboardShouldPersistTaps="handled">
-          <TText weight="display" style={styles.title}>स्वागत है</TText>
-          <TText style={styles.subtitle}>अपने खाते में लॉग इन करें</TText>
+          <Label text="पूरा नाम" />
+          <View style={styles.inputBox}>
+            <Ionicons name="person" size={18} color={colors.muted} />
+            <TextInput
+              testID="signup-name-input"
+              value={name}
+              onChangeText={setName}
+              placeholder="जैसे: राहुल वर्मा"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+            />
+          </View>
 
           <Label text="ईमेल" />
           <View style={styles.inputBox}>
             <Ionicons name="mail" size={18} color={colors.muted} />
             <TextInput
-              testID="login-email-input"
+              testID="signup-email-input"
               value={email}
               onChangeText={setEmail}
               placeholder="email@example.com"
@@ -88,17 +107,17 @@ export default function Login() {
             />
           </View>
 
-          <Label text="पासवर्ड" />
+          <Label text="पासवर्ड (कम से कम 8 अक्षर)" />
           <View style={styles.inputBox}>
             <Ionicons name="lock-closed" size={18} color={colors.muted} />
             <TextInput
-              testID="login-password-input"
+              testID="signup-password-input"
               value={password}
               onChangeText={setPassword}
               placeholder="••••••••"
               placeholderTextColor={colors.muted}
               secureTextEntry={!showPw}
-              autoComplete="password"
+              autoComplete="new-password"
               style={styles.input}
             />
             <Pressable onPress={() => setShowPw(!showPw)} hitSlop={10}>
@@ -106,19 +125,28 @@ export default function Login() {
             </Pressable>
           </View>
 
-          <Link href="/auth/forgot" asChild>
-            <Pressable style={{ alignSelf: "flex-end", marginTop: 8 }}>
-              <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>पासवर्ड भूल गए?</TText>
-            </Pressable>
-          </Link>
+          <Label text="पासवर्ड फिर से" />
+          <View style={styles.inputBox}>
+            <Ionicons name="lock-closed" size={18} color={colors.muted} />
+            <TextInput
+              testID="signup-confirm-input"
+              value={confirm}
+              onChangeText={setConfirm}
+              placeholder="••••••••"
+              placeholderTextColor={colors.muted}
+              secureTextEntry={!showPw}
+              autoComplete="new-password"
+              style={styles.input}
+            />
+          </View>
 
           <Button
-            testID="login-submit-btn"
-            label="लॉग इन करें"
-            icon="log-in"
+            testID="signup-submit-btn"
+            label="खाता बनाएँ"
+            icon="person-add"
             onPress={submit}
             loading={loading}
-            style={{ marginTop: spacing.lg }}
+            style={{ marginTop: spacing.xl }}
           />
 
           <View style={styles.divider}>
@@ -127,7 +155,7 @@ export default function Login() {
             <View style={styles.divLine} />
           </View>
 
-          <Pressable style={styles.googleBtn} onPress={google} disabled={googleLoading} testID="login-google-btn">
+          <Pressable style={styles.googleBtn} onPress={google} disabled={googleLoading} testID="signup-google-btn">
             <Ionicons name="logo-google" size={20} color="#EA4335" />
             <TText weight="bold" style={{ color: colors.text, fontSize: 15 }}>
               {googleLoading ? "कनेक्ट हो रहा है…" : "Google से जारी रखें"}
@@ -135,17 +163,12 @@ export default function Login() {
           </Pressable>
 
           <View style={styles.signupRow}>
-            <TText style={{ color: colors.muted, fontSize: 13 }}>नए हैं? </TText>
-            <Link href="/auth/signup" asChild>
-              <Pressable testID="login-go-signup">
-                <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>खाता बनाएँ</TText>
+            <TText style={{ color: colors.muted, fontSize: 13 }}>पहले से खाता है? </TText>
+            <Link href="/auth/login" asChild>
+              <Pressable testID="signup-go-login">
+                <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>लॉग इन करें</TText>
               </Pressable>
             </Link>
-          </View>
-
-          <View style={styles.legal}>
-            <Ionicons name="shield-checkmark" size={14} color={colors.muted} />
-            <TText style={{ color: colors.muted, fontSize: 12, marginLeft: 6 }}>आगे बढ़कर आप गोपनीयता नीति से सहमत होते हैं</TText>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -160,36 +183,14 @@ function Label({ text }: { text: string }) {
 const styles = StyleSheet.create({
   headerArea: { paddingBottom: 40 },
   headerInner: { alignItems: "center", paddingHorizontal: 20, paddingTop: 12, paddingBottom: 20 },
-  logo: { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: colors.accent },
-  brand: { color: "#fff", fontSize: 26, marginTop: 10, letterSpacing: 1 },
-  tag: { color: colors.accent, fontSize: 13, marginTop: 4 },
+  logo: { width: 72, height: 72, borderRadius: 36, borderWidth: 3, borderColor: colors.accent },
+  brand: { color: "#fff", fontSize: 22, marginTop: 10, letterSpacing: 0.5 },
+  tag: { color: colors.accent, fontSize: 12, marginTop: 4 },
   sheet: { flex: 1, marginTop: -24, backgroundColor: colors.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  title: { fontSize: 24, color: colors.text },
-  subtitle: { color: colors.muted, marginTop: 4 },
-  inputBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-  },
+  inputBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingHorizontal: 14 },
   input: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text, paddingVertical: 14 },
   divider: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: spacing.lg },
   divLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  googleBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    paddingVertical: 14,
-    borderRadius: radius.md,
-    borderWidth: 1.5,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
-  },
+  googleBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 14, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.borderStrong, backgroundColor: colors.surface },
   signupRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.xl },
-  legal: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 16 },
 });

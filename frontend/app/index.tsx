@@ -1,11 +1,8 @@
 /**
- * Splash + routing decision. Routes to:
- * - onboarding (first launch)
- * - login (no auth)
- * - profile-setup (auth but profile incomplete)
- * - tabs (auth complete)
+ * Splash + routing decision. Also consumes #session_id from Emergent Google
+ * redirect on web before deciding where to route.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Image, StyleSheet, View, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
@@ -16,19 +13,33 @@ import { TText } from "@/src/components/ui";
 
 export default function Index() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, consumeWebSessionId } = useAuth();
+  const [bootstrapping, setBootstrapping] = useState(true);
+
+  // First effect: consume any incoming Google session_id (web).
+  useEffect(() => {
+    (async () => {
+      try {
+        await consumeWebSessionId();
+      } catch {
+        // ignore
+      } finally {
+        setBootstrapping(false);
+      }
+    })();
+  }, [consumeWebSessionId]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || bootstrapping) return;
     (async () => {
       const seen = await storage.getItem<boolean>("ckd_onboarded", false);
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
       if (!seen) router.replace("/onboarding");
       else if (!user) router.replace("/auth/login");
       else if (!user.profile_complete) router.replace("/auth/profile-setup");
       else router.replace("/(tabs)/home");
     })();
-  }, [loading, user, router]);
+  }, [loading, bootstrapping, user, router]);
 
   return (
     <LinearGradient colors={[colors.primary, "#1a0a4a"]} style={styles.root}>

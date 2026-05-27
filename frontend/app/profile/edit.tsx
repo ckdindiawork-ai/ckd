@@ -20,8 +20,8 @@ export default function EditProfile() {
   const { user, updateUser } = useAuth();
   const { toast } = useToast();
   const [name, setName] = useState(user?.name || "");
-  const [email, setEmail] = useState(user?.email || "");
-  const [location, setLocation] = useState<LocationValue>({ state: "", city: user?.city || "", area: user?.area || "" });
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [location, setLocation] = useState<LocationValue>({ state: user?.state || "", city: user?.city || "", area: user?.area || "" });
   const [age, setAge] = useState(user?.age_group || "");
   const [photo, setPhoto] = useState(user?.photo_url || "");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -51,6 +51,7 @@ export default function EditProfile() {
 
   const save = async () => {
     if (!name.trim()) return toast.error("कृपया नाम भरें");
+    if (!location.state) return toast.error("राज्य चुनें");
     if (!location.city) return toast.error("शहर चुनें या टाइप करें");
     if (!location.area.trim()) return toast.error("इलाक़ा भरें");
     if (!age) return toast.error("उम्र समूह चुनें");
@@ -59,7 +60,8 @@ export default function EditProfile() {
     try {
       const u = await api.post("/auth/profile-setup", {
         name,
-        email: email || null,
+        phone: phone.trim() || null,
+        state: location.state,
         city: location.city,
         area: location.area,
         age_group: age,
@@ -100,8 +102,11 @@ export default function EditProfile() {
           <Label text="पूरा नाम *" />
           <TextInput value={name} onChangeText={setName} placeholder="नाम" placeholderTextColor={colors.muted} style={styles.input} testID="edit-name" />
 
-          <Label text="ईमेल" />
-          <TextInput value={email} onChangeText={setEmail} placeholder="email@example.com" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" style={styles.input} testID="edit-email" />
+          <Label text="ईमेल (बदला नहीं जा सकता)" />
+          <TextInput value={user?.email || ""} editable={false} placeholderTextColor={colors.muted} style={[styles.input, { opacity: 0.6 }]} testID="edit-email" />
+
+          <Label text="मोबाइल नंबर (वैकल्पिक)" />
+          <TextInput value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, "").slice(0, 10))} placeholder="10 अंक" placeholderTextColor={colors.muted} keyboardType="phone-pad" maxLength={10} style={styles.input} testID="edit-phone" />
 
           <View style={{ marginTop: 18 }}>
             <LocationPicker value={location} onChange={setLocation} testIDPrefix="edit-loc" />

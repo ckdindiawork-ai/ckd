@@ -1,0 +1,43 @@
+{
+  "summary": "CKD iteration 5 — auth v2 (email/password + Google + role-based admin guard) tested end-to-end. BACKEND: 37/37 pytest pass in 9.89s (/app/backend/tests/test_auth_v2.py — rewrote from old OTP-based test_ckd_api.py since /auth/send-otp and /auth/verify-otp are now removed). Verified: admin login (role=admin, auth_provider=password), member login (role=member), wrong/unknown password → 401 with 'गलत ईमेल या पासवर्ड', signup happy path (200, is_new_user=true, role=member, profile_complete=false), duplicate email → 409, password mismatch → 400 with 'मेल नहीं खाते', short password → 400, forgot-password always 200 (existing AND unknown email), reset-password full round trip with token extracted from /var/log/supervisor/backend.err.log (old password rejected, new password works), invalid reset token → 400, google session with invalid id → 401 (502 also accepted), google session with empty id → 422, /auth/me requires auth (401) and returns role+auth_provider, profile-setup consent=false → 400 / consent=true → 200 with profile_complete=true, legacy /auth/send-otp & /auth/verify-otp → 404 (REMOVED as expected), role guard 5 endpoints (admin/dashboard, admin/members, admin/flags, admin/announcements, /campaigns) all return 403 for member and 401 for unauth (and 200 for admin), issue-status update by non-reporter non-admin → 403, all 5 seeded members + admin loginable (seed idempotency). FRONTEND: ran Playwright on the Expo web preview at mobile viewport 390x844 — verified all 16 testIDs (login-{email,password,submit,google}-{input,btn}, signup-{name,email,password,confirm,submit,google}-{input,btn}, forgot-{email-input,submit-btn}, reset-{token,password,confirm}-input + reset-submit-btn). All 6 Hindi labels present on login screen ('ईमेल', 'पासवर्ड', 'लॉग इन', 'Google', 'पासवर्ड भूल', 'खाता बनाएँ'). Admin login redirects to /home and profile tab shows 'एडमिन पैनल' tile (testID profile-admin-link). Member login also redirects to /home; profile tab DOES NOT show admin tile — role gating works. Only pre-existing non-blocking warnings observed ('shadow*' deprecated, 'props.pointerEvents' deprecated — same as iter 4).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "shadow* style props", "issue": "Pre-existing React Native Web deprecation: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' — unchanged from iter 1-4, non-blocking. Reference: src/components/MembershipCard.tsx and other elevation surfaces."},
+      {"component": "props.pointerEvents", "issue": "Pre-existing deprecation: 'props.pointerEvents is deprecated. Use style.pointerEvents.' — react-native-web internal, non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_v2.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional, low) Migrate remaining `shadow*` and `props.pointerEvents` deprecations to RN-Web-compliant equivalents (boxShadow + style.pointerEvents). Long-standing, non-blocking — same as iter 4.",
+    "(Optional) The Google OAuth session-data endpoint at demobackend.emergentagent.com responded 404 for the bogus session-id during our test (we asserted 401|502 to be lenient). Real Google sign-in flow could not be exercised in headless test — main agent should self-verify by clicking 'Google से जारी रखें' in browser once.",
+    "(Refactor, low) server.py is now 1232 lines — over the 700-line threshold. Recommend splitting into auth/campaigns/issues/admin modules. Out of iter-5 scope.",
+    "(Hygiene) backend log shows passlib warning 'AttributeError: module bcrypt has no attribute __about__' at startup — cosmetic (passlib couldn't read bcrypt version) but hashing still works. Consider pinning passlib or bcrypt to a compatible version, or downgrade bcrypt to <4."
+  ],
+  "critical_code_review_comments": [
+    "server.py role guard implementation is solid: require_admin depends on get_current_user which raises 401 for missing/invalid token via manual _extract_bearer (avoids FastAPI's HTTPBearer 403 footgun) and 403 only when token is valid but user.role != 'admin' — matches spec exactly.",
+    "to_public_user correctly excludes password_hash from API responses (whitelist approach). _id is also excluded everywhere via {'_id': 0} projection. No data leak observed.",
+    "forgot_password is correctly non-leaking: always returns the same 200 body whether email exists or not. Token is hashed before storage (token_hash via bcrypt) and the raw token is only printed to logs once. TTL=30min and used flag prevent reuse.",
+    "reset_password iterates last 50 non-used reset records and bcrypt-verifies the raw token against each token_hash — works but is O(N) per request. Acceptable for current scale; consider indexing token prefix or storing a hash lookup key if scale grows.",
+    "Admin role auto-assignment in signup and google_session correctly compares email.lower() == ADMIN_EMAIL.lower() — case-insensitive, good.",
+    "migrate_to_email_auth is gated by a single app_meta flag (SEED_MIGRATION_KEY) — confirmed idempotent (re-runs are no-ops). However it does delete all users/campaigns/issues/etc on FIRST run after upgrade — destructive but expected one-time migration. Documented in test_credentials.md.",
+    "Frontend role-gating in app/(tabs)/profile.tsx L162 uses `user.role === 'admin'` — clean check matching the backend contract.",
+    "Login screen Hindi labels and testIDs all present; signup/forgot/reset screens follow the same pattern. Consistency across auth surface is good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_v2.py (NEW — replaces old OTP test_ckd_api.py)",
+    "/app/backend/tests/test_ckd_api.py (DELETED — covered legacy OTP endpoints which no longer exist)"
+  ],
+  "success_rate": {"backend": "100% (37/37)", "frontend": "100% — all 16 auth testIDs present, all 6 login Hindi labels visible, admin/member role gating verified end-to-end in web preview"},
+  "seed_data_creation": "pytest creates 3 throwaway signup users per run (test_signup_<ts>@ckd.demo, mismatch_<ts>@ckd.demo, short_<ts>@ckd.demo, profile_<ts>@ckd.demo) — not cleaned up (would require admin-delete) but harmless since email is timestamped. One TEST_announce_v2 announcement persists; previously seen in iter 5 admin endpoint check.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All backend regression tests for iter 5 auth live at /app/backend/tests/test_auth_v2.py (37 tests, ~10s). Old OTP-based test_ckd_api.py has been DELETED — DO NOT recreate it (server no longer has send-otp/verify-otp). Test credentials in /app/memory/test_credentials.md. To extract reset password tokens during forgot-flow tests, tail /var/log/supervisor/backend.err.log for '[PASSWORD RESET]' lines (helper _extract_reset_token in the test file). Pydantic EmailStr rejects @ckd.test (reserved TLD) — use @ckd.demo or @example.com for synthetic test emails. Frontend testIDs are documented in the iteration_5.json action items above. Admin tile gate is user.role === 'admin' in app/(tabs)/profile.tsx L162.",
+  "rca_of_issue": "No bugs found in iteration 5. The major auth rewrite is solid: bcrypt password hashing, JWT (HS256, 30-day expiry), role auto-assignment by ADMIN_EMAIL match, non-leaking forgot-password (always 200), hashed reset tokens with 30-min TTL, one-time migration to clear legacy OTP users, idempotent admin/sample-member seeding, manual Bearer extraction for clean 401-vs-403 distinction, and role guard on all /admin/* + create-campaign + non-owner issue-status endpoints. Frontend mirrors the contract perfectly (admin tile gated client-side, all testIDs present, Hindi labels correct)."
+}

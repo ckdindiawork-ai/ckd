@@ -4,17 +4,19 @@ Cockroach Kranti Dal (CKD) - Backend API
 """
 import os
 import uuid
+import secrets
 import logging
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, status
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+from passlib.context import CryptContext
+import httpx
 import jwt
 import cloudinary
 import cloudinary.uploader
@@ -28,10 +30,12 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 JWT_EXPIRES_DAYS = 30
-MOCK_OTP = "123456"
-ADMIN_MOBILE = "9999999999"
+RESET_TOKEN_TTL_MIN = 30
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ckdindia.work@gmail.com")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "INdr@#1234")
 VIDEO_MAX_SIZE_MB = int(os.environ.get("VIDEO_MAX_SIZE_MB", 50))
 IMAGE_MAX_SIZE_MB = int(os.environ.get("IMAGE_MAX_SIZE_MB", 10))
+EMERGENT_OAUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
 cloudinary.config(
     cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
@@ -45,7 +49,9 @@ db = client[DB_NAME]
 
 app = FastAPI(title="CKD API")
 api = APIRouter(prefix="/api")
-security = HTTPBearer(auto_error=False)
+
+# bcrypt password hashing
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 log = logging.getLogger("ckd")
@@ -59,35 +65,65 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+def hash_password(p: str) -> str:
+    return pwd_ctx.hash(p)
+
+
+def verify_password(p: str, h: str) -> bool:
+    try:
+        return pwd_ctx.verify(p, h)
+    except Exception:
+        return False
+
+
 # ---------- Models ----------
 class UserPublic(BaseModel):
     id: str
-    mobile: str
+    email: str
     name: Optional[str] = None
-    email: Optional[str] = None
+    phone: Optional[str] = None
     city: Optional[str] = None
+    state: Optional[str] = None
     area: Optional[str] = None
     age_group: Optional[str] = None
     photo_url: Optional[str] = None
     role: str = "member"
+    auth_provider: str = "password"  # 'password' | 'google'
     kranti_points: int = 0
     is_banned: bool = False
     created_at: str
     profile_complete: bool = False
 
 
-class OtpSendIn(BaseModel):
-    mobile: str
+class SignupIn(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    confirm_password: str
 
 
-class OtpVerifyIn(BaseModel):
-    mobile: str
-    otp: str
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ForgotIn(BaseModel):
+    email: EmailStr
+
+
+class ResetIn(BaseModel):
+    token: str
+    new_password: str
+
+
+class GoogleSessionIn(BaseModel):
+    session_id: str
 
 
 class ProfileSetupIn(BaseModel):
     name: str
-    email: Optional[str] = None
+    phone: Optional[str] = None
+    state: str
     city: str
     area: str
     age_group: str
@@ -166,11 +202,23 @@ def make_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
 
-async def get_current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    if not creds:
+def _extract_bearer(req: Request) -> Optional[str]:
+    """Manual Bearer extraction - avoids HTTPAuthorizationCredentials 403 vs 401 issue."""
+    h = req.headers.get("authorization") or req.headers.get("Authorization")
+    if not h:
+        return None
+    parts = h.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
+
+
+async def get_current_user(request: Request) -> dict:
+    token = _extract_bearer(request)
+    if not token:
         raise HTTPException(401, "Authentication required")
     try:
-        payload = jwt.decode(creds.credentials, JWT_SECRET, algorithms=[JWT_ALGO])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
         user_id = payload["sub"]
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid token")
@@ -191,18 +239,20 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
 def to_public_user(u: dict) -> dict:
     return {
         "id": u["id"],
-        "mobile": u["mobile"],
+        "email": u.get("email", ""),
         "name": u.get("name"),
-        "email": u.get("email"),
+        "phone": u.get("phone"),
         "city": u.get("city"),
+        "state": u.get("state"),
         "area": u.get("area"),
         "age_group": u.get("age_group"),
         "photo_url": u.get("photo_url"),
         "role": u.get("role", "member"),
+        "auth_provider": u.get("auth_provider", "password"),
         "kranti_points": u.get("kranti_points", 0),
         "is_banned": u.get("is_banned", False),
         "created_at": u.get("created_at", now_iso()),
-        "profile_complete": bool(u.get("name") and u.get("city")),
+        "profile_complete": bool(u.get("name") and u.get("city") and u.get("area") and u.get("age_group")),
     }
 
 
@@ -232,28 +282,137 @@ async def root():
     return {"message": "CKD API", "tagline": "युवा जागे, देश बदले"}
 
 
-# ---------- Routes: Auth ----------
-@api.post("/auth/send-otp")
-async def send_otp(payload: OtpSendIn):
-    mobile = payload.mobile.strip()
-    if not mobile or len(mobile) < 10:
-        raise HTTPException(400, "Invalid mobile")
-    # Mock - always returns success. Use OTP `123456`.
-    return {"sent": True, "mock_otp": MOCK_OTP, "message": "OTP भेज दिया गया (mock)"}
+# ---------- Routes: Auth (Email/Password + Google) ----------
+@api.post("/auth/signup", response_model=TokenOut)
+async def signup(payload: SignupIn):
+    email = payload.email.lower().strip()
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "नाम आवश्यक है")
+    if len(payload.password) < 8:
+        raise HTTPException(400, "पासवर्ड कम से कम 8 अक्षरों का होना चाहिए")
+    if payload.password != payload.confirm_password:
+        raise HTTPException(400, "दोनों पासवर्ड मेल नहीं खाते")
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(409, "इस ईमेल से पहले ही खाता बना है — लॉग इन कीजिए")
+    role = "admin" if email == ADMIN_EMAIL.lower() else "member"
+    user = {
+        "id": new_id(),
+        "email": email,
+        "name": name,
+        "password_hash": hash_password(payload.password),
+        "auth_provider": "password",
+        "role": role,
+        "kranti_points": 0,
+        "is_banned": False,
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one(dict(user))
+    token = make_token(user["id"])
+    return {"token": token, "user": to_public_user(user), "is_new_user": True}
 
 
-@api.post("/auth/verify-otp", response_model=TokenOut)
-async def verify_otp(payload: OtpVerifyIn):
-    mobile = payload.mobile.strip()
-    if payload.otp != MOCK_OTP:
-        raise HTTPException(401, "गलत OTP")
-    user = await db.users.find_one({"mobile": mobile}, {"_id": 0})
-    is_new = False
+@api.post("/auth/login", response_model=TokenOut)
+async def login(payload: LoginIn):
+    email = payload.email.lower().strip()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(401, "गलत ईमेल या पासवर्ड")
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(401, "गलत ईमेल या पासवर्ड")
+    if user.get("is_banned"):
+        raise HTTPException(403, "खाता ब्लॉक है")
+    token = make_token(user["id"])
+    return {"token": token, "user": to_public_user(user), "is_new_user": False}
+
+
+@api.post("/auth/forgot-password")
+async def forgot_password(payload: ForgotIn):
+    email = payload.email.lower().strip()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    # Always return same response (don't leak whether email exists)
+    if user:
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hash_password(raw_token)
+        await db.password_resets.insert_one({
+            "id": new_id(),
+            "user_id": user["id"],
+            "email": email,
+            "token_hash": token_hash,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MIN)).isoformat(),
+            "used": False,
+            "created_at": now_iso(),
+        })
+        # TODO: send via real email provider. For now log it.
+        reset_link = f"ckd://reset?email={email}&token={raw_token}"
+        log.warning(f"[PASSWORD RESET] email={email} token={raw_token} link={reset_link}")
+    return {"ok": True, "message": "अगर यह ईमेल पंजीकृत है तो पासवर्ड रीसेट लिंक भेज दिया गया है।"}
+
+
+@api.post("/auth/reset-password", response_model=TokenOut)
+async def reset_password(payload: ResetIn):
+    if len(payload.new_password) < 8:
+        raise HTTPException(400, "नया पासवर्ड कम से कम 8 अक्षरों का होना चाहिए")
+    # Find a non-used non-expired reset where the raw token verifies
+    cursor = db.password_resets.find({"used": False}, {"_id": 0}).sort("created_at", -1).limit(50)
+    rec = None
+    async for r in cursor:
+        try:
+            exp = datetime.fromisoformat(r["expires_at"])
+        except Exception:
+            continue
+        if exp < datetime.now(timezone.utc):
+            continue
+        if verify_password(payload.token, r["token_hash"]):
+            rec = r
+            break
+    if not rec:
+        raise HTTPException(400, "रीसेट लिंक अमान्य या समय-समाप्त है")
+    user = await db.users.find_one({"id": rec["user_id"]}, {"_id": 0})
     if not user:
+        raise HTTPException(404, "उपयोगकर्ता नहीं मिला")
+    await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(payload.new_password), "auth_provider": "password"}})
+    await db.password_resets.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now_iso()}})
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    token = make_token(user["id"])
+    return {"token": token, "user": to_public_user(fresh), "is_new_user": False}
+
+
+@api.post("/auth/google/session", response_model=TokenOut)
+async def google_session(payload: GoogleSessionIn):
+    """Exchange Emergent session_id for our JWT.
+    Frontend got session_id from auth.emergentagent.com redirect.
+    We verify with Emergent backend, then upsert user by email + return our JWT."""
+    if not payload.session_id:
+        raise HTTPException(400, "session_id आवश्यक है")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.get(EMERGENT_OAUTH_SESSION_URL, headers={"X-Session-ID": payload.session_id})
+        if r.status_code != 200:
+            raise HTTPException(401, f"Google सत्यापन विफल ({r.status_code})")
+        data = r.json()
+    except httpx.HTTPError as e:
+        log.exception("emergent oauth verify failed")
+        raise HTTPException(502, f"Google सत्यापन उपलब्ध नहीं: {e}")
+
+    email = (data.get("email") or "").lower().strip()
+    name = (data.get("name") or "").strip() or "क्रांतिकारी"
+    picture = data.get("picture")
+    if not email:
+        raise HTTPException(401, "Google खाते से ईमेल नहीं मिला")
+
+    is_new = False
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user:
+        role = "admin" if email == ADMIN_EMAIL.lower() else "member"
         user = {
             "id": new_id(),
-            "mobile": mobile,
-            "role": "admin" if mobile == ADMIN_MOBILE else "member",
+            "email": email,
+            "name": name,
+            "photo_url": picture,
+            "auth_provider": "google",
+            "role": role,
             "kranti_points": 0,
             "is_banned": False,
             "created_at": now_iso(),
@@ -261,8 +420,18 @@ async def verify_otp(payload: OtpVerifyIn):
         await db.users.insert_one(dict(user))
         user.pop("_id", None)
         is_new = True
-    if user.get("is_banned"):
-        raise HTTPException(403, "Account banned")
+    else:
+        update = {}
+        if not user.get("name") and name:
+            update["name"] = name
+        if not user.get("photo_url") and picture:
+            update["photo_url"] = picture
+        if update:
+            await db.users.update_one({"id": user["id"]}, {"$set": update})
+            user.update(update)
+        if user.get("is_banned"):
+            raise HTTPException(403, "खाता ब्लॉक है")
+
     token = make_token(user["id"])
     return {"token": token, "user": to_public_user(user), "is_new_user": is_new}
 
@@ -273,7 +442,8 @@ async def profile_setup(payload: ProfileSetupIn, user: dict = Depends(get_curren
         raise HTTPException(400, "Privacy consent required")
     update = {
         "name": payload.name.strip(),
-        "email": (payload.email or "").strip() or None,
+        "phone": (payload.phone or "").strip() or None,
+        "state": payload.state.strip(),
         "city": payload.city.strip(),
         "area": payload.area.strip(),
         "age_group": payload.age_group,
@@ -762,7 +932,12 @@ async def admin_dashboard(admin: dict = Depends(require_admin)):
 async def admin_list_members(q: Optional[str] = None, admin: dict = Depends(require_admin)):
     query = {}
     if q:
-        query = {"$or": [{"name": {"$regex": q, "$options": "i"}}, {"mobile": {"$regex": q}}, {"city": {"$regex": q, "$options": "i"}}]}
+        query = {"$or": [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+            {"phone": {"$regex": q}},
+            {"city": {"$regex": q, "$options": "i"}},
+        ]}
     docs = await db.users.find(query, {"_id": 0}).sort("created_at", -1).limit(200).to_list(200)
     return [to_public_user(d) for d in docs]
 
@@ -830,14 +1005,46 @@ async def admin_announce(payload: AnnouncementIn, admin: dict = Depends(require_
 
 
 # ---------- Seeding ----------
+SEED_MIGRATION_KEY = "auth_v2_email_password_2026_05"
+
+
+async def migrate_to_email_auth():
+    """One-time migration: wipe legacy OTP-based users + password_resets so the
+    email/password world is clean. Runs exactly once, tracked by a flag doc."""
+    flag = await db.app_meta.find_one({"key": SEED_MIGRATION_KEY})
+    if flag:
+        return
+    log.warning("Running one-time migration: wiping legacy OTP users")
+    await db.users.delete_many({})
+    await db.password_resets.delete_many({})
+    # campaigns reference user ids in `members` and `created_by` - clear stale
+    await db.campaigns.delete_many({})
+    await db.campaign_updates.delete_many({})
+    await db.issues.delete_many({})
+    await db.notifications.delete_many({})
+    await db.flags.delete_many({})
+    await db.app_meta.insert_one({"key": SEED_MIGRATION_KEY, "applied_at": now_iso()})
+    log.warning("Migration complete: legacy users & content cleared")
+
+
 async def seed_data():
-    # Admin
-    admin = await db.users.find_one({"mobile": ADMIN_MOBILE})
+    await migrate_to_email_auth()
+
+    # Indexes
+    await db.users.create_index("email", unique=True, sparse=True)
+    await db.users.create_index("id", unique=True)
+
+    # Admin (idempotent by email)
+    admin = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
     if not admin:
         admin = {
             "id": new_id(),
-            "mobile": ADMIN_MOBILE,
+            "email": ADMIN_EMAIL.lower(),
             "name": "CKD एडमिन",
+            "password_hash": hash_password(ADMIN_PASSWORD),
+            "auth_provider": "password",
+            "phone": None,
+            "state": "दिल्ली",
             "city": "दिल्ली",
             "area": "केंद्रीय कार्यालय",
             "age_group": "25-35",
@@ -845,25 +1052,36 @@ async def seed_data():
             "kranti_points": 0,
             "is_banned": False,
             "created_at": now_iso(),
-            "email": "admin@ckd.in",
         }
         await db.users.insert_one(dict(admin))
-        log.info("Seeded admin user")
+        log.info(f"Seeded admin user: {ADMIN_EMAIL}")
+    else:
+        # Make sure admin role and password are set
+        update = {"role": "admin"}
+        if not admin.get("password_hash"):
+            update["password_hash"] = hash_password(ADMIN_PASSWORD)
+            update["auth_provider"] = "password"
+        await db.users.update_one({"id": admin["id"]}, {"$set": update})
 
-    # Seed sample members
+    # Seed sample members (email-based)
     sample_members = [
-        {"mobile": "9000000001", "name": "राहुल वर्मा", "city": "दिल्ली", "area": "करोल बाग", "age_group": "18-25", "kranti_points": 145},
-        {"mobile": "9000000002", "name": "प्रिया शर्मा", "city": "मुंबई", "area": "अंधेरी", "age_group": "18-25", "kranti_points": 120},
-        {"mobile": "9000000003", "name": "अमित कुमार", "city": "दिल्ली", "area": "द्वारका", "age_group": "25-35", "kranti_points": 95},
-        {"mobile": "9000000004", "name": "नेहा सिंह", "city": "लखनऊ", "area": "गोमती नगर", "age_group": "18-25", "kranti_points": 75},
-        {"mobile": "9000000005", "name": "विकास यादव", "city": "जयपुर", "area": "मालवीय नगर", "age_group": "16-18", "kranti_points": 60},
+        {"email": "rahul@ckd.demo", "name": "राहुल वर्मा", "phone": "9000000001", "state": "दिल्ली", "city": "दिल्ली", "area": "करोल बाग", "age_group": "18-25", "kranti_points": 145},
+        {"email": "priya@ckd.demo", "name": "प्रिया शर्मा", "phone": "9000000002", "state": "महाराष्ट्र", "city": "मुंबई", "area": "अंधेरी", "age_group": "18-25", "kranti_points": 120},
+        {"email": "amit@ckd.demo", "name": "अमित कुमार", "phone": "9000000003", "state": "दिल्ली", "city": "दिल्ली", "area": "द्वारका", "age_group": "25-35", "kranti_points": 95},
+        {"email": "neha@ckd.demo", "name": "नेहा सिंह", "phone": "9000000004", "state": "उत्तर प्रदेश", "city": "लखनऊ", "area": "गोमती नगर", "age_group": "18-25", "kranti_points": 75},
+        {"email": "vikas@ckd.demo", "name": "विकास यादव", "phone": "9000000005", "state": "राजस्थान", "city": "जयपुर", "area": "मालवीय नगर", "age_group": "16-18", "kranti_points": 60},
     ]
+    sample_password_hash = hash_password("Demo@1234")
     for m in sample_members:
-        if not await db.users.find_one({"mobile": m["mobile"]}):
+        if not await db.users.find_one({"email": m["email"]}):
             doc = {
                 "id": new_id(),
-                "mobile": m["mobile"],
+                "email": m["email"],
                 "name": m["name"],
+                "phone": m["phone"],
+                "password_hash": sample_password_hash,
+                "auth_provider": "password",
+                "state": m["state"],
                 "city": m["city"],
                 "area": m["area"],
                 "age_group": m["age_group"],
@@ -876,7 +1094,8 @@ async def seed_data():
 
     # Seed sample campaigns
     if await db.campaigns.count_documents({}) == 0:
-        admin_id = (await db.users.find_one({"mobile": ADMIN_MOBILE}))["id"]
+        admin_doc = await db.users.find_one({"email": ADMIN_EMAIL.lower()})
+        admin_id = admin_doc["id"] if admin_doc else None
         member_ids = [u["id"] async for u in db.users.find({"role": "member"}, {"id": 1})]
         campaigns = [
             {
@@ -922,26 +1141,13 @@ async def seed_data():
             await db.campaigns.insert_one(doc)
         log.info("Seeded campaigns")
     else:
-        # Backfill is_featured for older campaigns
         await db.campaigns.update_many({"is_featured": {"$exists": False}}, {"$set": {"is_featured": False}})
-
-    # Backfill state on issues that pre-date the state field.
-    city_to_state = {
-        "दिल्ली": "दिल्ली", "मुंबई": "महाराष्ट्र", "जयपुर": "राजस्थान", "लखनऊ": "उत्तर प्रदेश",
-        "बेंगलुरु": "कर्नाटक", "चेन्नई": "तमिलनाडु", "हैदराबाद": "तेलंगाना", "पुणे": "महाराष्ट्र",
-        "कोलकाता": "पश्चिम बंगाल", "अहमदाबाद": "गुजरात", "इंदौर": "मध्य प्रदेश", "भोपाल": "मध्य प्रदेश",
-    }
-    for city, state in city_to_state.items():
-        await db.issues.update_many(
-            {"city": city, "$or": [{"state": {"$exists": False}}, {"state": None}, {"state": ""}]},
-            {"$set": {"state": state}},
-        )
 
     # Seed sample issues
     if await db.issues.count_documents({}) == 0:
-        m = await db.users.find_one({"mobile": "9000000001"})
-        m2 = await db.users.find_one({"mobile": "9000000003"})
-        m3 = await db.users.find_one({"mobile": "9000000002"})
+        m = await db.users.find_one({"email": "rahul@ckd.demo"})
+        m2 = await db.users.find_one({"email": "amit@ckd.demo"})
+        m3 = await db.users.find_one({"email": "priya@ckd.demo"})
         if m:
             issues = [
                 {

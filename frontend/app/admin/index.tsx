@@ -156,14 +156,14 @@ export default function Admin() {
             </View>
             {members.map((m) => (
               <Card key={m.id} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                <View style={styles.mAvatar}>{m.photo_url ? <Image source={{ uri: m.photo_url }} style={{ width: "100%", height: "100%", borderRadius: 22 }} /> : <TText weight="bold" style={{ color: colors.primary }}>{m.name?.[0] || m.mobile[0]}</TText>}</View>
+                <View style={styles.mAvatar}>{m.photo_url ? <Image source={{ uri: m.photo_url }} style={{ width: "100%", height: "100%", borderRadius: 22 }} /> : <TText weight="bold" style={{ color: colors.primary }}>{(m.name?.[0] || m.email?.[0] || "?").toUpperCase()}</TText>}</View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
                     <TText weight="bold" style={{ fontSize: 14 }}>{m.name || "—"}</TText>
                     {m.role === "admin" && <Pill label="एडमिन" icon="shield-checkmark" bg={colors.accent + "30"} color="#7a5a00" />}
                     {m.is_banned && <Pill label="बैन" bg={colors.energy} color="#fff" />}
                   </View>
-                  <TText style={{ color: colors.muted, fontSize: 12 }}>{m.mobile} • {m.city || "—"}</TText>
+                  <TText style={{ color: colors.muted, fontSize: 12 }}>{m.email} {m.phone ? `• ${m.phone}` : ""} • {m.city || "—"}</TText>
                   <TText style={{ color: colors.primary, fontSize: 11, marginTop: 2 }}>🔥 {m.kranti_points} पॉइंट्स</TText>
                 </View>
                 {m.role !== "admin" && (
