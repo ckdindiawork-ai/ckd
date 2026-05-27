@@ -1,0 +1,120 @@
+{
+  "theme_and_archetype": {
+    "theme": "light",
+    "archetype": "Custom Movement/Grassroots (Youthful High-Contrast)",
+    "rationale": "App deals with civic action, which needs a professional and trustworthy structure. It targets youth (16-35) so it must feel energetic and motivating, avoiding clinical or overly bureaucratic aesthetics."
+  },
+  "typography": {
+    "primary_font": "Hind",
+    "secondary_font": "Mukta",
+    "rationale": "Mukta and Hind are highly optimized for Devanagari script, offering excellent legibility and a modern, sturdy look that suits a bold youth movement.",
+    "hierarchy": {
+      "h1": "text-3xl font-bold tracking-tight text-[#1C1B2E]",
+      "h2": "text-2xl font-bold text-[#1C1B2E]",
+      "h3": "text-xl font-semibold text-[#1C1B2E]",
+      "body": "text-base font-normal text-[#1C1B2E] leading-relaxed",
+      "caption": "text-sm text-[#74738A]",
+      "overline": "text-xs font-bold uppercase tracking-widest text-[#74738A]"
+    }
+  },
+  "colors": {
+    "brand_primary": "#3A1C71",
+    "brand_accent_primary": "#F4B400",
+    "brand_accent_energy": "#E63329",
+    "background_base": "#F6F5FA",
+    "surface_white": "#FFFFFF",
+    "text_dark": "#1C1B2E",
+    "text_muted": "#74738A",
+    "success_green": "#2E9E5B",
+    "border_light": "rgba(58, 28, 113, 0.08)"
+  },
+  "layout_and_spacing": {
+    "spacing_scale": "Use generous Tailwind spacing like p-4, p-6. Internal padding in cards should be p-5.",
+    "app_structure_mobile": "The consumer app is a mobile-first interface. In React/Web context, constrain the main app container using `max-w-md mx-auto min-h-screen bg-[#F6F5FA] relative overflow-hidden pb-20 shadow-2xl`.",
+    "app_structure_admin": "The admin panel should use a standard desktop-first dashboard layout (sidebar + main content area) using full width `min-h-screen flex`.",
+    "corners": "Rounded aesthetics: `rounded-2xl` for main cards, `rounded-xl` for buttons, `rounded-full` for badges/avatars.",
+    "shadows": "Soft elevation: `shadow-sm` for cards, `shadow-md` for sticky headers/bottom nav."
+  },
+  "components_strategy": {
+    "bottom_navigation": {
+      "classes": "fixed bottom-0 w-full max-w-md bg-[#FFFFFF] border-t border-[#3A1C71]/10 flex justify-between items-center px-6 py-3 z-50",
+      "items": [
+        {"label": "होम", "icon": "Home"},
+        {"label": "अभियान", "icon": "Target"},
+        {"label": "समस्या", "icon": "AlertTriangle"},
+        {"label": "सूचना", "icon": "Bell"},
+        {"label": "प्रोफ़ाइल", "icon": "User"}
+      ]
+    },
+    "buttons": {
+      "primary": "bg-[#F4B400] text-[#1C1B2E] font-bold rounded-xl py-3 px-6 shadow-sm hover:brightness-95 active:scale-95 transition-all flex items-center justify-center gap-2",
+      "secondary": "bg-[#3A1C71] text-white font-semibold rounded-xl py-3 px-6 shadow-sm hover:bg-[#2F1559] active:scale-95 transition-all",
+      "danger": "bg-[#E63329] text-white font-semibold rounded-xl py-3 px-6 shadow-sm hover:bg-[#CC2D24] active:scale-95 transition-all",
+      "outline": "border-2 border-[#3A1C71] text-[#3A1C71] font-semibold rounded-xl py-3 px-6 hover:bg-[#3A1C71]/5"
+    },
+    "cards": {
+      "default": "bg-[#FFFFFF] rounded-2xl p-5 shadow-sm border border-[#3A1C71]/5 flex flex-col gap-3"
+    },
+    "badges": {
+      "open": "bg-[#F4B400]/20 text-[#1C1B2E] font-bold px-3 py-1 rounded-full text-xs",
+      "in_progress": "bg-[#3A1C71]/10 text-[#3A1C71] font-bold px-3 py-1 rounded-full text-xs",
+      "resolved": "bg-[#2E9E5B]/20 text-[#2E9E5B] font-bold px-3 py-1 rounded-full text-xs",
+      "urgent": "bg-[#E63329] text-white font-bold px-3 py-1 rounded-full text-xs animate-pulse"
+    },
+    "forms": {
+      "inputs": "bg-[#F6F5FA] border border-[#3A1C71]/10 rounded-xl px-4 py-3 text-[#1C1B2E] focus:ring-2 focus:ring-[#3A1C71] focus:border-transparent outline-none transition-all w-full"
+    }
+  },
+  "media_and_images": {
+    "logo_url": "https://customer-assets.emergentagent.com/job_bb88ef01-9486-44b3-bab0-5bce6557e88f/artifacts/nb1s3emw_WhatsApp%20Image%202026-05-27%20at%203.40.33%20PM.jpeg",
+    "onboarding_images": [
+      {
+        "url": "https://images.pexels.com/photos/36713460/pexels-photo-36713460.jpeg",
+        "category": "onboarding_1",
+        "description": "Youth cleaning litter - represents grassroot movement"
+      },
+      {
+        "url": "https://images.pexels.com/photos/8543585/pexels-photo-8543585.jpeg",
+        "category": "onboarding_2",
+        "description": "Volunteer giving thumbs up - represents community action"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1560220604-1985ebfe28b1",
+        "category": "onboarding_3",
+        "description": "Volunteers together - represents community force"
+      }
+    ],
+    "campaign_covers": [
+      {
+        "url": "https://images.pexels.com/photos/36713460/pexels-photo-36713460.jpeg",
+        "category": "campaign_active",
+        "description": "Youth cleaning up neighborhood"
+      }
+    ],
+    "issue_images": [
+      {
+        "url": "https://images.pexels.com/photos/5688465/pexels-photo-5688465.jpeg",
+        "category": "issue_pothole",
+        "description": "Dangerous pothole on road"
+      }
+    ],
+    "guidelines": "Use solid background colors matching the brand where images are loading. Images MUST have max-h constraints (e.g. max-h-48 on cards). Never stretch images, use object-cover."
+  },
+  "accessibility_and_testing": {
+    "testing_attributes": "CRITICAL: All interactive and key informational elements MUST include a `data-testid` attribute (kebab-case). Example: `data-testid=\"login-btn\"`, `data-testid=\"nav-home\"`, `data-testid=\"campaign-card-join\"`.",
+    "contrast": "Ensure text contrast over brand colors. Use #FFFFFF text on #3A1C71 backgrounds. Use #1C1B2E on #F4B400 backgrounds."
+  },
+  "motion_and_interactions": {
+    "hover_states": "Buttons must have hover/active states.",
+    "transitions": "Use Tailwind's `transition-all duration-200 ease-in-out` for interactive elements.",
+    "page_transitions": "Wrap main content with simple CSS animations (`animate-in fade-in slide-in-from-bottom-4 duration-300`) to mock screen changes."
+  },
+  "specific_screens_instructions": {
+    "general": "The entire UI MUST be in Hindi (Devanagari script) as requested.",
+    "splash": "Deep purple background (#3A1C71) with the Logo centered, and Tagline 'युवा जागे, देश बदले' in bright yellow (#F4B400) below it.",
+    "onboarding": "Full screen image top (max-h-[50vh]), bottom white sheet with rounded-t-3xl. Bold Hindi typography for motivation, dots for pagination, and 'शुरू करें' (Start) button.",
+    "home_feed": "Top header with Purple background, user avatar, and 'नमस्ते' (Hello). Main area: Featured campaign banner (large card, image cover, 'अभियान से जुड़ें' button), followed by 'हाल की समस्याएँ' (Recent issues) horizontal scroll list.",
+    "issue_reporting": "Simple multi-step or long form. Big camera placeholder area (upload photo), input for title, dropdown for category (सड़क, पानी, बिजली, सफ़ाई), and text area for details. 'दर्ज करें' submit button.",
+    "admin_dashboard": "Separate route/view. Desktop layout. Sidebar with navigation. Overview cards for Total Members, Active Campaigns, Open Issues. Table for recent flagged content."
+  }
+}
