@@ -32,7 +32,7 @@ export default function Report() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return toast.error("मीडिया चुनने की अनुमति दें");
     const r = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: kind === "image" ? ImagePicker.MediaTypeOptions.Images : ImagePicker.MediaTypeOptions.Videos,
+      mediaTypes: kind === "image" ? ["images"] : ["videos"],
       quality: 0.7,
       videoMaxDuration: 60,
     });

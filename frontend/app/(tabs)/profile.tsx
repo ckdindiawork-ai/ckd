@@ -32,7 +32,12 @@ export default function Profile() {
     try {
       const res = await shareMembershipCard(cardRef, user.name || "साथी");
       if (res.ok) {
-        toast.success(res.mode === "download" ? "कार्ड डाउनलोड हो गया" : "कार्ड साझा हो गया");
+        const msg =
+          res.mode === "download" ? "कार्ड डाउनलोड हो गया" :
+          res.mode === "clipboard" ? "विवरण क्लिपबोर्ड पर कॉपी हो गया" :
+          res.mode === "saved" ? "कार्ड सेव हो गया" :
+          "कार्ड साझा हो गया";
+        toast.success(msg);
       } else if (res.mode !== "cancelled") {
         toast.error("कार्ड साझा नहीं हो सका");
       }

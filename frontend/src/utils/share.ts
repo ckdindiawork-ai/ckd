@@ -77,47 +77,90 @@ export async function shareCampaign(
 export async function shareMembershipCard(cardRef: { current: any }, name: string) {
   const caption = `मैं Cockroach Kranti Dal (CKD) का सदस्य हूँ — युवा जागे, देश बदले 🚩\n— ${name}`;
 
-  if (Platform.OS === "web") {
-    // On web, html2canvas via view-shot's web backend isn't reliable; try Web Share fallback.
-    try {
-      const dataUrl = await captureRef(cardRef, { format: "png", quality: 0.95, result: "data-uri" } as any);
-      if (typeof navigator !== "undefined" && (navigator as any).share) {
-        const blob = await (await fetch(dataUrl)).blob();
-        const file = new File([blob], "ckd-membership.png", { type: "image/png" });
-        if ((navigator as any).canShare?.({ files: [file] })) {
-          await (navigator as any).share({ files: [file], title: "CKD सदस्यता कार्ड", text: caption });
-          return { ok: true, mode: "web-file" };
+  // Try image capture first (works best on native, sometimes on web via html2canvas)
+  let imageUri: string | null = null;
+  let imageDataUrl: string | null = null;
+  try {
+    if (Platform.OS === "web") {
+      imageDataUrl = await captureRef(cardRef, { format: "png", quality: 0.95, result: "data-uri" } as any);
+    } else {
+      imageUri = await captureRef(cardRef, { format: "png", quality: 0.95 });
+    }
+  } catch {
+    // Capture failed - fall through to text-only sharing below.
+  }
+
+  // Native path
+  if (Platform.OS !== "web") {
+    if (imageUri) {
+      try {
+        const isAvail = await Sharing.isAvailableAsync();
+        if (isAvail) {
+          await Sharing.shareAsync(imageUri, { dialogTitle: "CKD सदस्यता कार्ड", mimeType: "image/png" });
+          return { ok: true, mode: "image" };
         }
+        const dest = `${FileSystem.documentDirectory}ckd-membership.png`;
+        await FileSystem.copyAsync({ from: imageUri, to: dest });
+        return { ok: true, mode: "saved", path: dest };
+      } catch {
+        // fall through to text share
       }
-      // Final fallback: trigger a download
-      if (typeof document !== "undefined") {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = "ckd-membership.png";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        return { ok: true, mode: "download" };
-      }
+    }
+    try {
+      await Share.share({ title: "CKD सदस्यता कार्ड", message: caption });
+      return { ok: true, mode: "text" };
     } catch {
       return { ok: false, mode: "error" };
     }
   }
 
-  try {
-    const uri = await captureRef(cardRef, { format: "png", quality: 0.95 });
-    const isAvail = await Sharing.isAvailableAsync();
-    if (isAvail) {
-      await Sharing.shareAsync(uri, { dialogTitle: "CKD सदस्यता कार्ड", mimeType: "image/png" });
-      return { ok: true, mode: "image" };
+  // Web path
+  // 1) Try Web Share API with file if we have the image
+  if (imageDataUrl && typeof navigator !== "undefined" && (navigator as any).share) {
+    try {
+      const blob = await (await fetch(imageDataUrl)).blob();
+      const file = new File([blob], "ckd-membership.png", { type: "image/png" });
+      if ((navigator as any).canShare?.({ files: [file] })) {
+        await (navigator as any).share({ files: [file], title: "CKD सदस्यता कार्ड", text: caption });
+        return { ok: true, mode: "web-file" };
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") return { ok: false, mode: "cancelled" };
     }
-    // Fallback: copy file to docs and notify
-    const dest = `${FileSystem.documentDirectory}ckd-membership.png`;
-    await FileSystem.copyAsync({ from: uri, to: dest });
-    return { ok: true, mode: "saved", path: dest };
-  } catch {
-    return { ok: false, mode: "error" };
   }
+  // 2) Trigger a download if we have the image
+  if (imageDataUrl && typeof document !== "undefined") {
+    try {
+      const a = document.createElement("a");
+      a.href = imageDataUrl;
+      a.download = "ckd-membership.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return { ok: true, mode: "download" };
+    } catch {
+      // continue to text share
+    }
+  }
+  // 3) Try Web Share API with text+url
+  if (typeof navigator !== "undefined" && (navigator as any).share) {
+    try {
+      await (navigator as any).share({ title: "CKD सदस्यता कार्ड", text: caption });
+      return { ok: true, mode: "web-text" };
+    } catch (e: any) {
+      if (e?.name === "AbortError") return { ok: false, mode: "cancelled" };
+    }
+  }
+  // 4) Final fallback: clipboard copy
+  try {
+    if (typeof navigator !== "undefined" && (navigator as any).clipboard?.writeText) {
+      await (navigator as any).clipboard.writeText(caption);
+      return { ok: true, mode: "clipboard" };
+    }
+  } catch {
+    // ignore
+  }
+  return { ok: false, mode: "error" };
 }
 
 export const LOGO_REMOTE = LOGO_URL;
