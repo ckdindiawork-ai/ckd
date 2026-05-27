@@ -1004,6 +1004,49 @@ async def admin_announce(payload: AnnouncementIn, admin: dict = Depends(require_
     return doc
 
 
+@api.get("/admin/announcements")
+async def admin_list_announcements(admin: dict = Depends(require_admin)):
+    """List all announcement notifications (admin view, newest first)."""
+    docs = await db.notifications.find(
+        {"type": "announcement"}, {"_id": 0}
+    ).sort("created_at", -1).limit(200).to_list(200)
+    return docs
+
+
+@api.patch("/admin/announcements/{nid}")
+async def admin_edit_announcement(nid: str, payload: AnnouncementIn, admin: dict = Depends(require_admin)):
+    """Edit an existing announcement title/body/city."""
+    existing = await db.notifications.find_one({"id": nid, "type": "announcement"}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "घोषणा नहीं मिली")
+    meta = dict(existing.get("meta") or {})
+    meta["announcement"] = True
+    if payload.city:
+        meta["city"] = payload.city
+    else:
+        meta.pop("city", None)
+    await db.notifications.update_one(
+        {"id": nid},
+        {"$set": {
+            "title": payload.title,
+            "body": payload.body,
+            "meta": meta,
+            "updated_at": now_iso(),
+        }},
+    )
+    out = await db.notifications.find_one({"id": nid}, {"_id": 0})
+    return out
+
+
+@api.delete("/admin/announcements/{nid}")
+async def admin_delete_announcement(nid: str, admin: dict = Depends(require_admin)):
+    """Delete an announcement."""
+    res = await db.notifications.delete_one({"id": nid, "type": "announcement"})
+    if res.deleted_count == 0:
+        raise HTTPException(404, "घोषणा नहीं मिली")
+    return {"ok": True}
+
+
 # ---------- Seeding ----------
 SEED_MIGRATION_KEY = "auth_v2_email_password_2026_05"
 

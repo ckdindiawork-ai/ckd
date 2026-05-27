@@ -1,12 +1,19 @@
 /**
- * API client - thin fetch wrapper handling auth token + base URL.
+ * Production-grade API client for CKD.
  *
- * BASE URL resolution (in priority order):
- *   1. EXPO_PUBLIC_BACKEND_URL from .env / eas.json env injection (build-time inlined)
- *   2. Hard-coded production fallback so a packaged APK still works even if env
- *      injection silently fails during EAS Build.
- *
- * If you fork this repo to a different backend, change PROD_FALLBACK below.
+ * Design goals:
+ *   1. Single source of BASE URL with hard-coded fallback so a packaged APK
+ *      always knows where the backend lives (even if EAS env injection fails).
+ *   2. EVERY request gets logged (URL + status + ms) so logcat can debug 404s.
+ *   3. AbortController support — on logout we cancel ALL in-flight requests
+ *      to prevent stale fetches from crashing the next screen.
+ *   4. Network errors are auto-retried ONCE (not 4xx — auth/validation should
+ *      not retry).
+ *   5. HTML error responses (Emergent ingress 404 pages, captive portals) are
+ *      detected and never bubbled to the user as raw HTML — replaced with a
+ *      friendly Hindi message.
+ *   6. On 401 we treat the session as corrupt and trigger a global signOut
+ *      listener so the auth provider can navigate to /auth/login.
  */
 import { Platform } from "react-native";
 import { storage } from "@/src/utils/storage";
@@ -15,25 +22,40 @@ const PROD_FALLBACK = "https://grassroot-action.preview.emergentagent.com";
 
 function resolveBase(): string {
   const fromEnv = process.env.EXPO_PUBLIC_BACKEND_URL;
-  if (fromEnv && typeof fromEnv === "string" && fromEnv.startsWith("http")) return fromEnv.replace(/\/+$/, "");
-  // On web, prefer the current origin so /api proxying works in any deployment.
+  if (fromEnv && typeof fromEnv === "string" && fromEnv.startsWith("http")) {
+    return fromEnv.replace(/\/+$/, "");
+  }
   if (Platform.OS === "web" && typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin.replace(/\/+$/, "");
   }
   return PROD_FALLBACK;
 }
 
-const BASE = resolveBase();
-// One-shot log so the active URL is visible in `adb logcat` / Metro on first request.
-if (__DEV__ || Platform.OS !== "web") {
-  // eslint-disable-next-line no-console
-  console.log("[ckd-api] BASE =", BASE);
-}
+export const BASE = resolveBase();
+// One-shot boot log so the active backend URL is visible in `adb logcat` /
+// Metro on first request.
+// eslint-disable-next-line no-console
+console.log(`[ckd-api] BASE = ${BASE}  (Platform=${Platform.OS})`);
 
 const TOKEN_KEY = "ckd_token";
-
 let cachedToken: string | null = null;
 
+/* ------------------------------------------------------------------ */
+/* In-flight request tracking — used to cancel everything on logout.  */
+/* ------------------------------------------------------------------ */
+const inflight = new Set<AbortController>();
+
+/** Cancel every in-flight fetch (called from signOut). */
+export function cancelAllRequests() {
+  inflight.forEach((c) => {
+    try { c.abort(); } catch { /* ignore */ }
+  });
+  inflight.clear();
+}
+
+/* ------------------------------------------------------------------ */
+/* Token storage helpers                                              */
+/* ------------------------------------------------------------------ */
 export async function setToken(token: string | null) {
   cachedToken = token;
   if (token) await storage.setItem(TOKEN_KEY, token);
@@ -47,31 +69,98 @@ export async function loadToken() {
   return cachedToken;
 }
 
-async function request(path: string, opts: RequestInit = {}) {
+/** Force-flush ANY auth-related storage (called from signOut for safety). */
+export async function clearAllAuthState() {
+  cachedToken = null;
+  await storage.removeItem(TOKEN_KEY);
+  // Legacy keys from older builds — be aggressive, leave no trace.
+  await storage.removeItem("ckd_user");
+  await storage.removeItem("ckd_refresh_token");
+  await storage.removeItem("authToken");
+  cancelAllRequests();
+}
+
+/* ------------------------------------------------------------------ */
+/* Listener for 401s — auth provider subscribes to auto-logout.       */
+/* ------------------------------------------------------------------ */
+type AuthErrorListener = () => void;
+let unauthListener: AuthErrorListener | null = null;
+export function onUnauthorized(fn: AuthErrorListener) { unauthListener = fn; }
+
+/* ------------------------------------------------------------------ */
+/* Core request fn                                                    */
+/* ------------------------------------------------------------------ */
+type RequestOpts = RequestInit & { skipRetry?: boolean };
+
+function looksLikeHTML(text: string): boolean {
+  const t = (text || "").trim().toLowerCase();
+  return t.startsWith("<!doctype") || t.startsWith("<html") || t.includes("<title>");
+}
+
+async function request(path: string, opts: RequestOpts = {}, attempt = 0): Promise<any> {
   const token = await loadToken();
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...(opts.headers as any),
   };
-  if (!(opts.body instanceof FormData)) {
+  if (!(opts.body instanceof FormData) && opts.body) {
     headers["Content-Type"] = "application/json";
   }
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
-  const text = await res.text();
-  let data: any = {};
+  const url = `${BASE}/api${path}`;
+  const controller = new AbortController();
+  inflight.add(controller);
+  const started = Date.now();
   try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { detail: text };
+    const res = await fetch(url, { ...opts, headers, signal: controller.signal });
+    const ms = Date.now() - started;
+    const text = await res.text();
+    // eslint-disable-next-line no-console
+    console.log(`[ckd-api] ${opts.method || "GET"} ${url} → ${res.status} (${ms}ms)`);
+
+    let data: any = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      // Response is not JSON — likely an HTML 404 page from an ingress / captive portal.
+      data = { detail: looksLikeHTML(text)
+        ? "नेटवर्क समस्या — सर्वर से सही उत्तर नहीं मिला। दोबारा कोशिश करें।"
+        : (text || `HTTP ${res.status}`) };
+    }
+
+    if (!res.ok) {
+      // 401 = session corrupted / token rejected → notify auth provider.
+      if (res.status === 401 && unauthListener) {
+        try { unauthListener(); } catch { /* ignore */ }
+      }
+      const friendly = typeof data.detail === "string" && !looksLikeHTML(data.detail)
+        ? data.detail
+        : `Request failed (${res.status})`;
+      const err = new Error(friendly);
+      (err as any).status = res.status;
+      throw err;
+    }
+    return data;
+  } catch (e: any) {
+    const ms = Date.now() - started;
+    // Network error or abort? Retry once for transient issues.
+    const isAbort = e?.name === "AbortError";
+    const isNetwork = !e?.status && !isAbort;
+    // eslint-disable-next-line no-console
+    console.warn(`[ckd-api] FAIL ${opts.method || "GET"} ${url} (${ms}ms) ${isAbort ? "[abort]" : ""}: ${e?.message || e}`);
+    if (!isAbort && isNetwork && !opts.skipRetry && attempt < 1) {
+      // brief backoff then retry once
+      await new Promise((r) => setTimeout(r, 600));
+      return request(path, opts, attempt + 1);
+    }
+    if (isNetwork && !isAbort) {
+      throw new Error("इंटरनेट उपलब्ध नहीं — कनेक्शन जाँचकर दोबारा कोशिश करें");
+    }
+    throw e;
+  } finally {
+    inflight.delete(controller);
   }
-  if (!res.ok) {
-    const err = new Error(data.detail || `Request failed (${res.status})`);
-    (err as any).status = res.status;
-    throw err;
-  }
-  return data;
 }
 
 function inferMime(uri: string, kind: "image" | "video", fallbackExt?: string) {
@@ -91,12 +180,9 @@ export const api = {
   get: (p: string) => request(p),
   post: (p: string, body?: any) => request(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   put: (p: string, body?: any) => request(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
+  patch: (p: string, body?: any) => request(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: (p: string) => request(p, { method: "DELETE" }),
-  /**
-   * Cross-platform Cloudinary upload via backend.
-   * - Web: converts the local/blob URI to a real Blob (FormData {uri} shape does not work on web).
-   * - Native: sends the {uri, name, type} shape which React Native turns into multipart.
-   */
+
   upload: async (uri: string, kind: "image" | "video", onProgress?: (pct: number) => void) => {
     const token = await loadToken();
     const { mime, ext } = inferMime(uri, kind);
@@ -113,7 +199,6 @@ export const api = {
       fd.append("file", { uri, name: `upload.${ext}`, type: mime } as any);
     }
 
-    // Use XHR for progress on web/native (fetch lacks upload progress).
     const url = `${BASE}/api/media/upload`;
     return await new Promise<any>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -126,7 +211,7 @@ export const api = {
         let data: any = {};
         try { data = JSON.parse(xhr.responseText || "{}"); } catch { data = { detail: xhr.responseText }; }
         if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-        else reject(new Error(data.detail || `अपलोड विफल (${xhr.status})`));
+        else reject(new Error(typeof data.detail === "string" && !looksLikeHTML(data.detail) ? data.detail : `अपलोड विफल (${xhr.status})`));
       };
       xhr.onerror = () => reject(new Error("नेटवर्क त्रुटि — कृपया दोबारा कोशिश करें"));
       xhr.send(fd);

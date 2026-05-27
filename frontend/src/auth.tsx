@@ -5,7 +5,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { api, loadToken, setToken as persistToken } from "@/src/api";
+import { api, loadToken, setToken as persistToken, clearAllAuthState, onUnauthorized, cancelAllRequests } from "@/src/api";
 
 export type User = {
   id: string;
@@ -74,10 +74,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const u = await api.get("/auth/me");
       setUser(u);
-    } catch {
+    } catch (e: any) {
+      // 401 or anything else → treat session as dead, force clean.
+      console.log("[auth] refresh failed → clearing session", e?.message);
       setUser(null);
-      await persistToken(null);
+      await clearAllAuthState();
     }
+  }, []);
+
+  useEffect(() => {
+    // Register 401 listener so any future API call that hits 401 will auto-logout.
+    onUnauthorized(() => {
+      console.log("[auth] 401 detected → auto logout");
+      setUser(null);
+      // best-effort cleanup; don't await to avoid blocking the calling render
+      void clearAllAuthState();
+    });
   }, []);
 
   useEffect(() => {
@@ -94,8 +106,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await persistToken(null);
-    setUser(null);
+    console.log("[auth] signOut → cancel + clear all auth state");
+    cancelAllRequests();          // 1. abort any in-flight fetches
+    await clearAllAuthState();    // 2. wipe token + legacy keys
+    setUser(null);                // 3. flip UI to logged-out
   }, []);
 
   const updateUser = useCallback((u: User) => setUser(u), []);

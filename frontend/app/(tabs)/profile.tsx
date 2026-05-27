@@ -189,7 +189,12 @@ export default function Profile() {
             {renderList()}
           </View>
 
-          <Pressable style={styles.logout} onPress={signOut} testID="profile-logout">
+          <Pressable style={styles.logout} onPress={async () => {
+            await signOut();
+            // Explicit navigation prevents stale screens (in-flight requests
+            // were already cancelled by signOut).
+            router.replace("/auth/login");
+          }} testID="profile-logout">
             <Ionicons name="log-out-outline" size={18} color={colors.energy} />
             <TText weight="bold" style={{ color: colors.energy }}>लॉग आउट</TText>
           </Pressable>

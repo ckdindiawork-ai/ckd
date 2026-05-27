@@ -24,11 +24,13 @@ export default function Admin() {
   const [members, setMembers] = useState<any[]>([]);
   const [flags, setFlags] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [showCampaignModal, setShowCampaignModal] = useState(false);
   const [showAnnounceModal, setShowAnnounceModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [editingAnnounce, setEditingAnnounce] = useState<any>(null);
 
   useEffect(() => {
     if (user && user.role !== "admin") router.replace("/(tabs)/home");
@@ -40,6 +42,7 @@ export default function Admin() {
       else if (tab === "members") setMembers(await api.get(`/admin/members${search ? `?q=${encodeURIComponent(search)}` : ""}`));
       else if (tab === "moderation") setFlags(await api.get("/admin/flags"));
       else if (tab === "campaigns") setCampaigns(await api.get("/campaigns"));
+      else if (tab === "announcements") setAnnouncements(await api.get("/admin/announcements"));
     } catch (e: any) { Alert.alert("त्रुटि", e.message); }
   }, [tab, search]);
 
@@ -231,14 +234,47 @@ export default function Admin() {
 
         {tab === "announcements" && (
           <View>
-            <Button label="नई घोषणा भेजें" icon="megaphone" onPress={() => setShowAnnounceModal(true)} testID="admin-new-announce" />
+            <Button label="नई घोषणा भेजें" icon="megaphone" onPress={() => { setEditingAnnounce(null); setShowAnnounceModal(true); }} testID="admin-new-announce" />
             <TText style={{ color: colors.muted, fontSize: 12, marginTop: 12, textAlign: "center" }}>घोषणा सभी सदस्यों या चुने हुए शहर में पहुँचेगी।</TText>
+
+            <TText weight="bold" style={{ color: colors.text, marginTop: 22, marginBottom: 10, fontSize: 14 }}>पुरानी घोषणाएँ ({announcements.length})</TText>
+            {announcements.length === 0 ? (
+              <TText style={{ color: colors.muted, textAlign: "center", paddingVertical: 24, fontSize: 13 }}>अभी कोई घोषणा नहीं।</TText>
+            ) : announcements.map((a) => (
+              <Card key={a.id} style={{ padding: 12, marginBottom: 10 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <TText weight="bold" style={{ color: colors.text, fontSize: 14 }}>{a.title}</TText>
+                    <TText style={{ color: colors.muted, fontSize: 12, marginTop: 4, lineHeight: 18 }} numberOfLines={3}>{a.body}</TText>
+                    <View style={{ flexDirection: "row", gap: 6, marginTop: 6, alignItems: "center" }}>
+                      {a?.meta?.city ? <Pill label={a.meta.city} /> : <Pill label="सबको" />}
+                      <TText style={{ color: colors.muted, fontSize: 11 }}>• {timeAgo(a.created_at)}</TText>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: "column", gap: 6 }}>
+                    <Pressable onPress={() => { setEditingAnnounce(a); setShowAnnounceModal(true); }} style={styles.iconBtn} testID={`admin-announce-edit-${a.id}`}>
+                      <Ionicons name="create" size={16} color={colors.primary} />
+                    </Pressable>
+                    <Pressable onPress={() => {
+                      Alert.alert("घोषणा हटाएँ?", `"${a.title}" स्थायी रूप से हटा दी जाएगी।`, [
+                        { text: "रद्द", style: "cancel" },
+                        { text: "हटाएँ", style: "destructive", onPress: async () => {
+                          try { await api.del(`/admin/announcements/${a.id}`); await load(); } catch (e: any) { Alert.alert("त्रुटि", e.message); }
+                        } },
+                      ]);
+                    }} style={[styles.iconBtn, { backgroundColor: "#FFE5E5" }]} testID={`admin-announce-del-${a.id}`}>
+                      <Ionicons name="trash" size={16} color="#D32F2F" />
+                    </Pressable>
+                  </View>
+                </View>
+              </Card>
+            ))}
           </View>
         )}
       </ScrollView>
 
       <CampaignModal visible={showCampaignModal} onClose={() => setShowCampaignModal(false)} editing={editing} onSaved={async () => { setShowCampaignModal(false); await load(); }} />
-      <AnnounceModal visible={showAnnounceModal} onClose={() => setShowAnnounceModal(false)} onSent={async () => { setShowAnnounceModal(false); await load(); Alert.alert("भेज दी गई", "घोषणा सभी सदस्यों तक पहुँच गई।"); }} />
+      <AnnounceModal visible={showAnnounceModal} editing={editingAnnounce} onClose={() => { setShowAnnounceModal(false); setEditingAnnounce(null); }} onSent={async () => { setShowAnnounceModal(false); setEditingAnnounce(null); await load(); Alert.alert(editingAnnounce ? "अपडेट हो गई" : "भेज दी गई", editingAnnounce ? "घोषणा अपडेट हो गई।" : "घोषणा सभी सदस्यों तक पहुँच गई।"); }} />
     </SafeAreaView>
   );
 }
@@ -322,18 +358,41 @@ function CampaignModal({ visible, onClose, editing, onSaved }: any) {
   );
 }
 
-function AnnounceModal({ visible, onClose, onSent }: any) {
+function AnnounceModal({ visible, onClose, onSent, editing }: any) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [city, setCity] = useState("");
   const [showCity, setShowCity] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (editing) {
+      setTitle(editing.title || "");
+      setBody(editing.body || "");
+      setCity(editing?.meta?.city || "");
+    } else {
+      setTitle("");
+      setBody("");
+      setCity("");
+    }
+  }, [editing, visible]);
+
   const submit = async () => {
     if (!title || !body) return Alert.alert("अधूरा");
     setLoading(true);
-    try { await api.post("/admin/announcements", { title, body, city: city || null }); setTitle(""); setBody(""); setCity(""); onSent(); }
-    catch (e: any) { Alert.alert("त्रुटि", e.message); } finally { setLoading(false); }
+    try {
+      if (editing?.id) {
+        await api.patch(`/admin/announcements/${editing.id}`, { title, body, city: city || null });
+      } else {
+        await api.post("/admin/announcements", { title, body, city: city || null });
+      }
+      setTitle(""); setBody(""); setCity("");
+      onSent();
+    } catch (e: any) {
+      Alert.alert("त्रुटि", e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -341,7 +400,7 @@ function AnnounceModal({ visible, onClose, onSent }: any) {
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top", "bottom"]}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <View style={styles.modalHead}>
-            <TText weight="display" style={{ fontSize: 20 }}>नई घोषणा</TText>
+            <TText weight="display" style={{ fontSize: 20 }}>{editing ? "घोषणा संपादित करें" : "नई घोषणा"}</TText>
             <Pressable onPress={onClose}><Ionicons name="close" size={24} color={colors.text} /></Pressable>
           </View>
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
@@ -358,7 +417,7 @@ function AnnounceModal({ visible, onClose, onSent }: any) {
                 </ScrollView>
               </Card>
             )}
-            <Button label="भेजें" icon="send" loading={loading} onPress={submit} testID="announce-send" />
+            <Button label={editing ? "सुरक्षित करें" : "भेजें"} icon={editing ? "checkmark-circle" : "send"} loading={loading} onPress={submit} testID="announce-send" />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -384,4 +443,5 @@ const styles = StyleSheet.create({
   opt: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
   featuredRow: { flexDirection: "row", gap: 10, alignItems: "center", padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.accent + "10" },
   checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.accent, alignItems: "center", justifyContent: "center" },
+  iconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" },
 });
