@@ -65,6 +65,7 @@ export default function Report() {
       const r = await api.post("/issues", {
         title,
         description,
+        state: location.state,
         city: location.city,
         area: location.area,
         category,

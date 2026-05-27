@@ -262,17 +262,18 @@ function CampaignModal({ visible, onClose, editing, onSaved }: any) {
   const [date, setDate] = useState("");
   const [goal, setGoal] = useState("");
   const [cover, setCover] = useState("");
+  const [isFeatured, setIsFeatured] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (editing) { setTitle(editing.title); setDescription(editing.description); setLocation(editing.location); setDate(editing.date); setGoal(editing.goal || ""); setCover(editing.cover_url || ""); }
-    else { setTitle(""); setDescription(""); setLocation(""); setDate(""); setGoal(""); setCover(""); }
+    if (editing) { setTitle(editing.title); setDescription(editing.description); setLocation(editing.location); setDate(editing.date); setGoal(editing.goal || ""); setCover(editing.cover_url || ""); setIsFeatured(!!editing.is_featured); }
+    else { setTitle(""); setDescription(""); setLocation(""); setDate(""); setGoal(""); setCover(""); setIsFeatured(false); }
   }, [editing, visible]);
 
   const pickCover = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return;
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7 });
     if (!r.canceled) { try { const u = await api.upload(r.assets[0].uri, "image"); setCover(u.url); } catch {} }
   };
 
@@ -280,7 +281,7 @@ function CampaignModal({ visible, onClose, editing, onSaved }: any) {
     if (!title || !description || !location || !date) return Alert.alert("अधूरा", "सभी फ़ील्ड भरें");
     setLoading(true);
     try {
-      const data = { title, description, cover_url: cover || null, location, date, goal };
+      const data = { title, description, cover_url: cover || null, location, date, goal, is_featured: isFeatured };
       if (editing) await api.put(`/campaigns/${editing.id}`, data);
       else await api.post("/campaigns", data);
       onSaved();
@@ -304,6 +305,15 @@ function CampaignModal({ visible, onClose, editing, onSaved }: any) {
             <TextInput value={location} onChangeText={setLocation} placeholder="शहर (जैसे: दिल्ली)" placeholderTextColor={colors.muted} style={styles.minput} />
             <TextInput value={date} onChangeText={setDate} placeholder="तारीख़ (YYYY-MM-DD)" placeholderTextColor={colors.muted} style={styles.minput} />
             <TextInput value={goal} onChangeText={setGoal} placeholder="लक्ष्य (वैकल्पिक)" placeholderTextColor={colors.muted} style={styles.minput} />
+            <Pressable onPress={() => setIsFeatured(!isFeatured)} style={styles.featuredRow} testID="admin-featured-toggle">
+              <View style={[styles.checkbox, isFeatured && { backgroundColor: colors.accent, borderColor: colors.accent }]}>
+                {isFeatured && <Ionicons name="star" size={14} color={colors.text} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <TText weight="bold" style={{ fontSize: 14 }}>विशेष अभियान (होम कैरोसेल में दिखाएँ)</TText>
+                <TText style={{ color: colors.muted, fontSize: 12 }}>होम पेज के टॉप कैरोसेल में अधिकतम 4 अभियान दिखेंगे</TText>
+              </View>
+            </Pressable>
             <Button label={editing ? "अपडेट करें" : "अभियान बनाएँ"} loading={loading} onPress={submit} icon="checkmark-circle" />
           </ScrollView>
         </KeyboardAvoidingView>
@@ -372,4 +382,6 @@ const styles = StyleSheet.create({
   coverPick: { height: 160, borderRadius: 12, backgroundColor: colors.primary + "10", borderWidth: 2, borderColor: colors.primary + "30", borderStyle: "dashed", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   minput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.bodyMedium, color: colors.text, fontSize: 14 },
   opt: { padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  featuredRow: { flexDirection: "row", gap: 10, alignItems: "center", padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.accent + "10" },
+  checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.accent, alignItems: "center", justifyContent: "center" },
 });

@@ -218,11 +218,105 @@ def test_list_issues_filter(session):
         assert d["city"] == "दिल्ली"
 
 
+# ---------- Iteration 3: state field, state-counts, featured campaigns ----------
+def test_issues_state_filter(session):
+    r = session.get(f"{API}/issues", params={"state": "दिल्ली"})
+    assert r.status_code == 200
+    docs = r.json()
+    for d in docs:
+        assert d.get("state") == "दिल्ली"
+
+
+def test_issues_state_counts(session, member_creds):
+    # Create a state-tagged issue first to guarantee state-counts is non-empty
+    payload = {
+        "title": "TEST_state_count_seed",
+        "description": "seed",
+        "state": "दिल्ली",
+        "city": "दिल्ली",
+        "area": "Test",
+        "category": "anya",
+    }
+    session.post(f"{API}/issues", json=payload, headers=member_creds["headers"])
+    r = session.get(f"{API}/issues/state-counts")
+    assert r.status_code == 200
+    data = r.json()
+    assert isinstance(data, dict)
+    # After creating a दिल्ली issue, state-counts MUST contain दिल्ली
+    assert "दिल्ली" in data
+    for k, v in data.items():
+        assert isinstance(v, int) and v > 0
+
+
+def test_campaigns_featured_filter(session):
+    r = session.get(f"{API}/campaigns", params={"featured": "true"})
+    assert r.status_code == 200
+    docs = r.json()
+    assert len(docs) >= 1
+    for d in docs:
+        assert d.get("is_featured") is True
+
+
+def test_create_issue_requires_state(session, member_creds):
+    # IssueIn now requires state - 422 if missing
+    payload = {
+        "title": "TEST_no_state",
+        "description": "test",
+        "city": "दिल्ली",
+        "area": "करोल बाग",
+        "category": "safai",
+    }
+    r = session.post(f"{API}/issues", json=payload, headers=member_creds["headers"])
+    assert r.status_code == 422
+
+
+def test_create_campaign_with_featured_flag(session, admin_headers):
+    payload = {
+        "title": "TEST_featured_अभियान",
+        "description": "टेस्ट featured",
+        "location": "दिल्ली",
+        "state": "दिल्ली",
+        "date": "2026-05-01",
+        "is_featured": True,
+    }
+    r = session.post(f"{API}/campaigns", json=payload, headers=admin_headers)
+    assert r.status_code == 200
+    cid = r.json()["id"]
+    # Should appear in featured list
+    feat = session.get(f"{API}/campaigns", params={"featured": "true"}).json()
+    assert any(c["id"] == cid for c in feat)
+    # cleanup
+    session.delete(f"{API}/campaigns/{cid}", headers=admin_headers)
+
+
+def test_create_issue_appears_in_state_view(session, member_creds):
+    """BUG-1 verification: a newly created issue must be queryable by state filter."""
+    payload = {
+        "title": "TEST_state_visibility",
+        "description": "test",
+        "state": "गुजरात",
+        "city": "अहमदाबाद",
+        "area": "Test Area",
+        "category": "anya",
+    }
+    r = session.post(f"{API}/issues", json=payload, headers=member_creds["headers"])
+    assert r.status_code == 200
+    iid = r.json()["id"]
+    # Now filter by गुजरात
+    rs = session.get(f"{API}/issues", params={"state": "गुजरात"})
+    assert rs.status_code == 200
+    assert any(d["id"] == iid for d in rs.json())
+    # State-counts must now include गुजरात
+    counts = session.get(f"{API}/issues/state-counts").json()
+    assert counts.get("गुजरात", 0) >= 1
+
+
 def test_create_issue_points(session, member_creds):
     before = session.get(f"{API}/auth/me", headers=member_creds["headers"]).json()["kranti_points"]
     payload = {
         "title": "TEST_समस्या",
         "description": "टेस्ट विवरण",
+        "state": "दिल्ली",
         "city": "दिल्ली",
         "area": "करोल बाग",
         "category": "safai",

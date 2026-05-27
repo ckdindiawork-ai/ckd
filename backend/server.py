@@ -106,8 +106,10 @@ class CampaignIn(BaseModel):
     description: str
     cover_url: Optional[str] = None
     location: str
+    state: Optional[str] = None
     date: str
     goal: Optional[str] = None
+    is_featured: bool = False
 
 
 class CampaignUpdateIn(BaseModel):
@@ -125,6 +127,7 @@ class IssueIn(BaseModel):
     description: str
     media_url: Optional[str] = None
     media_type: Optional[str] = None
+    state: str
     city: str
     area: str
     category: str  # safai/sadak/paani/bijli/madad/anya
@@ -345,11 +348,13 @@ async def upload_media(
 
 # ---------- Routes: Campaigns ----------
 @api.get("/campaigns")
-async def list_campaigns(city: Optional[str] = None, limit: int = 50):
+async def list_campaigns(city: Optional[str] = None, featured: bool = False, limit: int = 50):
     q = {"is_active": True}
     if city:
         q["location"] = city
-    docs = await db.campaigns.find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    if featured:
+        q["is_featured"] = True
+    docs = await db.campaigns.find(q, {"_id": 0}).sort([("is_featured", -1), ("created_at", -1)]).to_list(limit)
     for d in docs:
         d["member_count"] = len(d.get("members", []))
     return docs
@@ -480,8 +485,10 @@ async def comment_update(uid: str, payload: CommentIn, user: dict = Depends(get_
 
 # ---------- Routes: Issues ----------
 @api.get("/issues")
-async def list_issues(city: Optional[str] = None, category: Optional[str] = None, limit: int = 100):
+async def list_issues(state: Optional[str] = None, city: Optional[str] = None, category: Optional[str] = None, limit: int = 100):
     q = {}
+    if state:
+        q["state"] = state
     if city:
         q["city"] = city
     if category:
@@ -496,6 +503,13 @@ async def list_issues(city: Optional[str] = None, category: Optional[str] = None
         d["helper_count"] = len(d.get("helpers", []))
         d["comment_count"] = len(d.get("comments", []))
     return docs
+
+
+@api.get("/issues/state-counts")
+async def state_counts():
+    pipe = [{"$group": {"_id": "$state", "count": {"$sum": 1}}}]
+    rows = await db.issues.aggregate(pipe).to_list(200)
+    return {(r["_id"] or "अन्य"): r["count"] for r in rows if r["_id"]}
 
 
 @api.post("/issues")
@@ -870,24 +884,30 @@ async def seed_data():
                 "description": "दिल्ली की यमुना नदी को साफ़ करने का बड़ा अभियान। साथ आएं, बदलाव लाएं। हमारी नदी, हमारी ज़िम्मेदारी।",
                 "cover_url": "https://images.pexels.com/photos/36713460/pexels-photo-36713460.jpeg",
                 "location": "दिल्ली",
+                "state": "दिल्ली",
                 "date": "2026-03-15",
                 "goal": "10 km घाट सफ़ाई",
+                "is_featured": True,
             },
             {
                 "title": "मोहल्ला सफ़ाई - करोल बाग",
                 "description": "हर रविवार सुबह 7 बजे करोल बाग में मोहल्ला सफ़ाई। झाड़ू, दस्ताने और जोश साथ लाएं।",
                 "cover_url": "https://images.pexels.com/photos/8543585/pexels-photo-8543585.jpeg",
                 "location": "दिल्ली",
+                "state": "दिल्ली",
                 "date": "2026-02-28",
                 "goal": "हर रविवार 50+ स्वयंसेवक",
+                "is_featured": True,
             },
             {
                 "title": "पौधारोपण - मुंबई हरित",
                 "description": "मुंबई को हरा-भरा बनाने का अभियान। 10,000 पौधे लगाने का लक्ष्य।",
                 "cover_url": "https://images.unsplash.com/photo-1560220604-1985ebfe28b1",
                 "location": "मुंबई",
+                "state": "महाराष्ट्र",
                 "date": "2026-03-01",
                 "goal": "10,000 पौधे",
+                "is_featured": True,
             },
         ]
         for c in campaigns:
@@ -901,6 +921,9 @@ async def seed_data():
             }
             await db.campaigns.insert_one(doc)
         log.info("Seeded campaigns")
+    else:
+        # Backfill is_featured for older campaigns
+        await db.campaigns.update_many({"is_featured": {"$exists": False}}, {"$set": {"is_featured": False}})
 
     # Seed sample issues
     if await db.issues.count_documents({}) == 0:
@@ -914,6 +937,7 @@ async def seed_data():
                     "description": "मेन रोड पर खतरनाक गड्ढा, कई दुर्घटनाएँ हो चुकी हैं। तुरंत मरम्मत की ज़रूरत।",
                     "media_url": "https://images.pexels.com/photos/5688465/pexels-photo-5688465.jpeg",
                     "media_type": "image",
+                    "state": "दिल्ली",
                     "city": "दिल्ली",
                     "area": "करोल बाग",
                     "category": "sadak",
@@ -923,6 +947,7 @@ async def seed_data():
                 {
                     "title": "द्वारका में पानी की समस्या",
                     "description": "पिछले 3 दिन से पानी नहीं आ रहा। कई परिवार परेशान हैं।",
+                    "state": "दिल्ली",
                     "city": "दिल्ली",
                     "area": "द्वारका",
                     "category": "paani",
@@ -934,6 +959,7 @@ async def seed_data():
                     "description": "गली में हफ़्तों से कचरा नहीं उठा। बदबू और मच्छर बढ़ रहे हैं।",
                     "media_url": "https://images.pexels.com/photos/36713460/pexels-photo-36713460.jpeg",
                     "media_type": "image",
+                    "state": "महाराष्ट्र",
                     "city": "मुंबई",
                     "area": "अंधेरी",
                     "category": "safai",

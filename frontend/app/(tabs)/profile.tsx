@@ -5,14 +5,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth";
 import { api } from "@/src/api";
 import { Button, Card, EmptyState, StatusBadge, TText } from "@/src/components/ui";
 import { MembershipCard } from "@/src/components/MembershipCard";
 import { useToast } from "@/src/components/Toast";
-import { shareMembershipCard } from "@/src/utils/share";
+import { saveMembershipCard } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { timeAgo } from "@/src/utils/format";
 
@@ -30,16 +30,18 @@ export default function Profile() {
     if (!user) return;
     setSharingCard(true);
     try {
-      const res = await shareMembershipCard(cardRef, user.name || "साथी");
+      const res = await saveMembershipCard(cardRef, user.name || "साथी");
       if (res.ok) {
         const msg =
+          res.mode === "gallery" ? "कार्ड गैलरी में सेव हो गया" :
           res.mode === "download" ? "कार्ड डाउनलोड हो गया" :
           res.mode === "clipboard" ? "विवरण क्लिपबोर्ड पर कॉपी हो गया" :
-          res.mode === "saved" ? "कार्ड सेव हो गया" :
-          "कार्ड साझा हो गया";
+          res.mode === "saved" ? "कार्ड फ़ाइल में सेव हो गया" :
+          res.mode === "shared" ? "कार्ड साझा हो गया" :
+          "हो गया";
         toast.success(msg);
       } else if (res.mode !== "cancelled") {
-        toast.error("कार्ड साझा नहीं हो सका");
+        toast.error("कार्ड सेव नहीं हो सका");
       }
     } finally {
       setSharingCard(false);
@@ -55,6 +57,9 @@ export default function Profile() {
   }, [refresh]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Refresh activity whenever the Profile tab regains focus (e.g. after reporting an issue).
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
@@ -134,8 +139,8 @@ export default function Profile() {
             </View>
             <MembershipCard ref={cardRef} user={user} />
             <Button
-              label={sharingCard ? "तैयार हो रहा है..." : "कार्ड डाउनलोड या साझा करें"}
-              icon="share-social"
+              label={sharingCard ? "तैयार हो रहा है..." : "कार्ड डाउनलोड करें"}
+              icon="download"
               loading={sharingCard}
               onPress={onShareCard}
               style={{ marginTop: 12 }}
@@ -144,8 +149,12 @@ export default function Profile() {
           </View>
 
           {/* Action cards */}
-          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 10 }}>
+            <ActionTile icon="create" label="प्रोफ़ाइल अपडेट" onPress={() => router.push("/profile/edit")} testID="profile-edit" />
+            <ActionTile icon="map" label="राज्य देखें" onPress={() => router.push("/states")} testID="profile-states" />
             <ActionTile icon="trophy" label="लीडरबोर्ड" onPress={() => router.push("/leaderboard")} testID="profile-leaderboard" />
+          </View>
+          <View style={{ flexDirection: "row", gap: 10, marginBottom: 16 }}>
             <ActionTile icon="book" label="नियम" onPress={() => router.push("/guidelines")} testID="profile-guidelines" />
             <ActionTile icon="shield" label="गोपनीयता" onPress={() => router.push("/privacy")} testID="profile-privacy" />
           </View>

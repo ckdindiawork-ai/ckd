@@ -1,12 +1,11 @@
 /**
- * Cascade state→city picker + free-text area input.
- * Used in signup, profile, and issue reporting.
+ * Cascade राज्य → शहर → इलाक़ा picker. Allows free-text city if not in list.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Card, TText } from "@/src/components/ui";
-import { colors, fonts, radius, spacing } from "@/src/theme";
+import { colors, fonts, radius } from "@/src/theme";
 import { CITIES_BY_STATE, STATES } from "@/src/data/locations";
 
 export type LocationValue = { state: string; city: string; area: string };
@@ -23,12 +22,18 @@ export function LocationPicker({
   const [openState, setOpenState] = useState(false);
   const [openCity, setOpenCity] = useState(false);
   const [stateFilter, setStateFilter] = useState("");
+  const [cityMode, setCityMode] = useState<"select" | "custom">("select");
 
   const cities = useMemo(() => (value.state ? CITIES_BY_STATE[value.state] || [] : []), [value.state]);
   const filteredStates = useMemo(
     () => (stateFilter ? STATES.filter((s) => s.includes(stateFilter)) : STATES),
     [stateFilter],
   );
+
+  // If the existing city isn't in the new state's list, treat as custom.
+  useEffect(() => {
+    if (value.state && value.city && !cities.includes(value.city)) setCityMode("custom");
+  }, [value.state, value.city, cities]);
 
   return (
     <View style={{ gap: 10 }}>
@@ -63,6 +68,7 @@ export function LocationPicker({
                   style={styles.option}
                   onPress={() => {
                     onChange({ state: s, city: "", area: value.area });
+                    setCityMode("select");
                     setOpenState(false);
                     setStateFilter("");
                   }}
@@ -78,38 +84,62 @@ export function LocationPicker({
       </View>
 
       <View>
-        <TText weight="bold" style={styles.label}>शहर *</TText>
-        <Pressable
-          style={[styles.input, !value.state && { opacity: 0.6 }]}
-          onPress={() => {
-            if (!value.state) return;
-            setOpenCity(!openCity);
-            setOpenState(false);
-          }}
-          disabled={!value.state}
-          testID={`${testIDPrefix}-city`}
-        >
-          <TText style={{ color: value.city ? colors.text : colors.muted, fontSize: 15 }}>
-            {value.city || (value.state ? "शहर चुनें" : "पहले राज्य चुनें")}
-          </TText>
-          <Ionicons name={openCity ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
-        </Pressable>
-        {openCity && (
-          <Card style={{ padding: 0, marginTop: 4, maxHeight: 280, overflow: "hidden" }}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {cities.map((c) => (
-                <Pressable
-                  key={c}
-                  style={styles.option}
-                  onPress={() => { onChange({ ...value, city: c }); setOpenCity(false); }}
-                >
-                  <TText weight={value.city === c ? "bold" : "regular"} style={{ color: value.city === c ? colors.primary : colors.text }}>
-                    {c}
-                  </TText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </Card>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <TText weight="bold" style={styles.label}>शहर *</TText>
+          {value.state && (
+            <Pressable onPress={() => { setCityMode(cityMode === "select" ? "custom" : "select"); setOpenCity(false); }} testID={`${testIDPrefix}-city-mode`}>
+              <TText weight="bold" style={{ color: colors.primary, fontSize: 12 }}>
+                {cityMode === "select" ? "सूची में नहीं? यहाँ टाइप करें" : "सूची से चुनें"}
+              </TText>
+            </Pressable>
+          )}
+        </View>
+
+        {cityMode === "select" ? (
+          <>
+            <Pressable
+              style={[styles.input, !value.state && { opacity: 0.6 }]}
+              onPress={() => {
+                if (!value.state) return;
+                setOpenCity(!openCity);
+                setOpenState(false);
+              }}
+              disabled={!value.state}
+              testID={`${testIDPrefix}-city`}
+            >
+              <TText style={{ color: value.city ? colors.text : colors.muted, fontSize: 15 }}>
+                {value.city || (value.state ? "शहर चुनें" : "पहले राज्य चुनें")}
+              </TText>
+              <Ionicons name={openCity ? "chevron-up" : "chevron-down"} size={18} color={colors.muted} />
+            </Pressable>
+            {openCity && (
+              <Card style={{ padding: 0, marginTop: 4, maxHeight: 280, overflow: "hidden" }}>
+                <ScrollView keyboardShouldPersistTaps="handled">
+                  {cities.map((c) => (
+                    <Pressable
+                      key={c}
+                      style={styles.option}
+                      onPress={() => { onChange({ ...value, city: c }); setOpenCity(false); }}
+                    >
+                      <TText weight={value.city === c ? "bold" : "regular"} style={{ color: value.city === c ? colors.primary : colors.text }}>
+                        {c}
+                      </TText>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </Card>
+            )}
+          </>
+        ) : (
+          <TextInput
+            value={value.city}
+            onChangeText={(t) => onChange({ ...value, city: t })}
+            placeholder={value.state ? "अपना शहर टाइप करें" : "पहले राज्य चुनें"}
+            placeholderTextColor={colors.muted}
+            editable={!!value.state}
+            style={[styles.textInput, !value.state && { opacity: 0.6 }]}
+            testID={`${testIDPrefix}-city-input`}
+          />
         )}
       </View>
 
@@ -133,28 +163,8 @@ export function LocationPicker({
 
 const styles = StyleSheet.create({
   label: { marginBottom: 8, color: colors.text },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  textInput: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontFamily: fonts.bodyMedium,
-    fontSize: 15,
-    color: colors.text,
-  },
+  input: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  textInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 14, fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text },
   option: { padding: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bg },
   search: { flex: 1, fontFamily: fonts.body, color: colors.text, paddingVertical: 4 },
