@@ -1,22 +1,39 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "Kranti Dal",
+    "slug": "ckd-kranti-dal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "ckd",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "in.ckd.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Capture civic issue photos for reports",
+        "NSPhotoLibraryUsageDescription": "Attach photos/videos to issue reports",
+        "NSPhotoLibraryAddUsageDescription": "Save your membership card to gallery",
+        "NSMicrophoneUsageDescription": "Record audio with issue videos"
+      }
     },
     "android": {
+      "package": "in.ckd.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#3A1C71"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -31,10 +48,25 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#3A1C71"
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach photos/videos to issue reports",
+          "cameraPermission": "Capture civic issue photos for reports"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Save your membership card to gallery",
+          "savePhotosPermission": "Save your membership card to gallery",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
