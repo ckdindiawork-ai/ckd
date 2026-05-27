@@ -24,8 +24,9 @@ export default function Campaigns() {
 
   const onShare = async (c: any) => {
     const res = await shareCampaign(c);
-    if (res.ok) toast.success("शेयर हो गया");
-    else if (res.mode !== "cancelled") toast.error("शेयर नहीं हो सका");
+    if (res.ok && res.mode === "clipboard") toast.success("लिंक कॉपी हो गया");
+    else if (!res.ok && res.mode === "error") toast.error("शेयर नहीं हो सका");
+    // Otherwise the OS share sheet handled it - no toast needed.
   };
 
   const load = useCallback(async () => {

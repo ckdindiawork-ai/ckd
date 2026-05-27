@@ -9,6 +9,7 @@ import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Card, Pill, TText } from "@/src/components/ui";
+import { VideoPlayer } from "@/src/components/VideoPlayer";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/Toast";
@@ -35,8 +36,8 @@ export default function CampaignDetail() {
   const onShare = async () => {
     if (!c) return;
     const res = await shareCampaign(c);
-    if (res.ok) toast.success("शेयर हो गया");
-    else if (res.mode !== "cancelled") toast.error("शेयर नहीं हो सका");
+    if (res.ok && res.mode === "clipboard") toast.success("लिंक कॉपी हो गया");
+    else if (!res.ok && res.mode === "error") toast.error("शेयर नहीं हो सका");
   };
 
   const load = useCallback(async () => {
@@ -58,19 +59,23 @@ export default function CampaignDetail() {
     } catch (e: any) { toast.error(e.message || "जुड़ नहीं सके"); } finally { setJoining(false); }
   };
 
-  const pick = async () => {
+  const pick = async (kind: "image" | "video" = "image") => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return toast.error("गैलरी अनुमति चाहिए");
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+    const r = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: kind === "image" ? ["images"] : ["videos"],
+      quality: 0.7,
+      videoMaxDuration: 60,
+    });
     if (r.canceled || !r.assets[0]) return;
     setUploadingMedia(true);
     setUploadPct(0);
     try {
-      const u = await api.upload(r.assets[0].uri, "image", (p) => setUploadPct(p));
-      setMedia({ url: u.url, type: "image" });
-      toast.success("फ़ोटो अपलोड हो गई");
+      const u = await api.upload(r.assets[0].uri, kind, (p) => setUploadPct(p));
+      setMedia({ url: u.url, type: kind });
+      toast.success(kind === "image" ? "फ़ोटो अपलोड हो गई" : "वीडियो अपलोड हो गया");
     } catch (e: any) {
-      toast.error(e.message || "फ़ोटो अपलोड नहीं हो पाई");
+      toast.error(e.message || (kind === "image" ? "फ़ोटो अपलोड नहीं हो पाई" : "वीडियो अपलोड नहीं हो पाया"));
     } finally {
       setUploadingMedia(false);
     }
@@ -187,7 +192,11 @@ export default function CampaignDetail() {
                 />
                 {media && (
                   <View style={{ marginTop: 8 }}>
-                    <Image source={{ uri: media.url }} style={{ width: "100%", height: 180, borderRadius: 12 }} />
+                    {media.type === "video" ? (
+                      <VideoPlayer uri={media.url} height={180} />
+                    ) : (
+                      <Image source={{ uri: media.url }} style={{ width: "100%", height: 180, borderRadius: 12 }} />
+                    )}
                     <Pressable onPress={() => setMedia(null)} style={styles.removeMedia}>
                       <Ionicons name="close" size={14} color="#fff" />
                     </Pressable>
@@ -202,10 +211,16 @@ export default function CampaignDetail() {
                   </View>
                 )}
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-                  <Pressable onPress={pick} disabled={uploadingMedia} style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: uploadingMedia ? 0.6 : 1 }} testID="campaign-update-pick">
-                    <Ionicons name="image" size={18} color={colors.primary} />
-                    <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>{uploadingMedia ? "अपलोड..." : "फ़ोटो जोड़ें"}</TText>
-                  </Pressable>
+                  <View style={{ flexDirection: "row", gap: 14, alignItems: "center" }}>
+                    <Pressable onPress={() => pick("image")} disabled={uploadingMedia} style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: uploadingMedia ? 0.6 : 1 }} testID="campaign-update-pick">
+                      <Ionicons name="image" size={18} color={colors.primary} />
+                      <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>फ़ोटो</TText>
+                    </Pressable>
+                    <Pressable onPress={() => pick("video")} disabled={uploadingMedia} style={{ flexDirection: "row", alignItems: "center", gap: 6, opacity: uploadingMedia ? 0.6 : 1 }} testID="campaign-update-pick-video">
+                      <Ionicons name="videocam" size={18} color={colors.primary} />
+                      <TText weight="bold" style={{ color: colors.primary, fontSize: 13 }}>{uploadingMedia ? "अपलोड..." : "वीडियो"}</TText>
+                    </Pressable>
+                  </View>
                   <Button label="पोस्ट करें" icon="send" onPress={postUpdate} loading={posting} disabled={uploadingMedia} style={{ paddingVertical: 10, paddingHorizontal: 14 }} testID="campaign-update-submit" />
                 </View>
               </Card>
@@ -227,7 +242,13 @@ export default function CampaignDetail() {
                   </Pressable>
                 </View>
                 <TText style={{ marginTop: 10, lineHeight: 21, fontSize: 14 }}>{u.text}</TText>
-                {u.media_url && <Image source={{ uri: u.media_url }} style={{ width: "100%", height: 200, borderRadius: 12, marginTop: 10 }} />}
+                {u.media_url && (
+                  u.media_type === "video" ? (
+                    <View style={{ marginTop: 10 }}><VideoPlayer uri={u.media_url} height={200} /></View>
+                  ) : (
+                    <Image source={{ uri: u.media_url }} style={{ width: "100%", height: 200, borderRadius: 12, marginTop: 10 }} />
+                  )
+                )}
                 <View style={{ flexDirection: "row", gap: 16, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
                   <Pressable onPress={() => like(u.id)} style={{ flexDirection: "row", alignItems: "center", gap: 4 }} testID={`update-like-${u.id}`}>
                     <Ionicons name={u._liked ? "heart" : "heart-outline"} size={18} color={u._liked ? colors.energy : colors.muted} />

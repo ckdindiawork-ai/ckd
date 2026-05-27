@@ -10,6 +10,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, TText } from "@/src/components/ui";
 import { LocationPicker, type LocationValue } from "@/src/components/LocationPicker";
+import { VideoPlayer } from "@/src/components/VideoPlayer";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/Toast";
@@ -101,15 +102,19 @@ export default function Report() {
           </View>
 
           {/* Media picker */}
-          <Pressable style={styles.mediaBox} onPress={() => !uploading && pickMedia("image")} disabled={uploading} testID="report-media-picker">
+          <Pressable style={styles.mediaBox} onPress={() => !media && !uploading && pickMedia("image")} disabled={uploading || !!media} testID="report-media-picker">
             {media ? (
-              <>
-                <Image source={{ uri: media.url }} style={styles.mediaPreview} />
-                <View style={styles.mediaReplace}>
-                  <Ionicons name="refresh" size={14} color="#fff" />
-                  <TText weight="bold" style={{ color: "#fff", fontSize: 12 }}>बदलें</TText>
-                </View>
-              </>
+              <View style={{ width: "100%" }}>
+                {media.type === "video" ? (
+                  <VideoPlayer uri={media.url} height={220} />
+                ) : (
+                  <Image source={{ uri: media.url }} style={styles.mediaPreview} />
+                )}
+                <Pressable onPress={() => setMedia(null)} style={styles.mediaReplace} testID="report-media-remove">
+                  <Ionicons name="close" size={14} color="#fff" />
+                  <TText weight="bold" style={{ color: "#fff", fontSize: 12 }}>हटाएँ</TText>
+                </Pressable>
+              </View>
             ) : uploading ? (
               <View style={{ alignItems: "center", padding: 16 }}>
                 <View style={styles.mediaIcon}>

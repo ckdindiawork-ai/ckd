@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Image, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
@@ -29,6 +29,8 @@ export default function IssuesList() {
   }, [cat, cityOnly, user?.city]);
 
   useEffect(() => { load(); }, [load]);
+  // Refresh on focus so newly reported issues appear immediately.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
@@ -64,10 +66,16 @@ export default function IssuesList() {
             <Pressable onPress={() => router.push(`/issues/${item.id}`)} testID={`issue-${item.id}`}>
               <Card>
                 <View style={{ flexDirection: "row", gap: 12 }}>
-                  {item.media_url ? (
+                  {item.media_url && item.media_type !== "video" ? (
                     <Image source={{ uri: item.media_url }} style={{ width: 84, height: 84, borderRadius: 12 }} />
                   ) : (
-                    <View style={[styles.thumbAlt]}><Ionicons name={c.icon as any} size={28} color={colors.primary} /></View>
+                    <View style={[styles.thumbAlt]}>
+                      {item.media_type === "video" ? (
+                        <Ionicons name="play-circle" size={32} color={colors.accent} />
+                      ) : (
+                        <Ionicons name={c.icon as any} size={28} color={colors.primary} />
+                      )}
+                    </View>
                   )}
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

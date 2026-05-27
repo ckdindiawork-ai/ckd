@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Image, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { Card, EmptyState, Pill, StatusBadge, TText } from "@/src/components/ui";
@@ -25,6 +25,8 @@ export default function StateIssues() {
   }, [stateName]);
 
   useEffect(() => { load(); }, [load]);
+  // Refresh whenever this screen regains focus (e.g. after submitting a new issue).
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
@@ -61,10 +63,16 @@ export default function StateIssues() {
             <Pressable onPress={() => router.push(`/issues/${item.id}`)} testID={`state-issue-${item.id}`}>
               <Card>
                 <View style={{ flexDirection: "row", gap: 12 }}>
-                  {item.media_url ? (
+                  {item.media_url && item.media_type !== "video" ? (
                     <Image source={{ uri: item.media_url }} style={styles.thumb} />
                   ) : (
-                    <View style={[styles.thumbAlt]}><Ionicons name={c.icon as any} size={28} color={colors.primary} /></View>
+                    <View style={[styles.thumbAlt]}>
+                      {item.media_type === "video" ? (
+                        <Ionicons name="play-circle" size={32} color={colors.accent} />
+                      ) : (
+                        <Ionicons name={c.icon as any} size={28} color={colors.primary} />
+                      )}
+                    </View>
                   )}
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>

@@ -204,11 +204,15 @@ export default function Home() {
                 <Pressable key={i.id} onPress={() => router.push(`/issues/${i.id}`)} testID={`home-issue-${i.id}`}>
                   <Card>
                     <View style={{ flexDirection: "row", gap: 12 }}>
-                      {i.media_url ? (
+                      {i.media_url && i.media_type !== "video" ? (
                         <Image source={{ uri: i.media_url }} style={styles.issueThumb} />
                       ) : (
-                        <View style={[styles.issueThumb, { backgroundColor: colors.primary + "10", alignItems: "center", justifyContent: "center" }]}>
-                          <Ionicons name={cat.icon as any} size={26} color={colors.primary} />
+                        <View style={[styles.issueThumb, { backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }]}>
+                          {i.media_type === "video" ? (
+                            <Ionicons name="play-circle" size={32} color={colors.accent} />
+                          ) : (
+                            <Ionicons name={cat.icon as any} size={26} color={colors.accent} />
+                          )}
                         </View>
                       )}
                       <View style={{ flex: 1 }}>

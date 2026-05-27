@@ -8,8 +8,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Card, Pill, StatusBadge, TText } from "@/src/components/ui";
+import { VideoPlayer } from "@/src/components/VideoPlayer";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
+import { useToast } from "@/src/components/Toast";
+import { shareIssue } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { getCategory, timeAgo } from "@/src/utils/format";
 
@@ -17,10 +20,18 @@ export default function IssueDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [issue, setIssue] = useState<any>(null);
   const [cmtText, setCmtText] = useState("");
   const [supLoading, setSupLoading] = useState(false);
   const [volLoading, setVolLoading] = useState(false);
+
+  const onShare = async () => {
+    if (!issue) return;
+    const res = await shareIssue(issue);
+    if (res.ok && res.mode === "clipboard") toast.success("लिंक कॉपी हो गया");
+    else if (!res.ok && res.mode === "error") toast.error("शेयर नहीं हो सका");
+  };
 
   const load = useCallback(async () => {
     const i = await api.get(`/issues/${id}`);
@@ -71,7 +82,10 @@ export default function IssueDetail() {
           <View style={styles.hdrRow}>
             <Pressable onPress={() => router.back()} style={styles.back}><Ionicons name="arrow-back" size={22} color="#fff" /></Pressable>
             <TText weight="display" style={{ color: "#fff", fontSize: 18 }}>समस्या विवरण</TText>
-            <Pressable onPress={flag} testID="issue-flag"><Ionicons name="flag-outline" size={20} color="#fff" /></Pressable>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable onPress={onShare} style={styles.back} testID="issue-share"><Ionicons name="share-social" size={20} color="#fff" /></Pressable>
+              <Pressable onPress={flag} style={styles.back} testID="issue-flag"><Ionicons name="flag-outline" size={20} color="#fff" /></Pressable>
+            </View>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -89,7 +103,15 @@ export default function IssueDetail() {
               <TText style={{ color: colors.muted, fontSize: 12 }}>•</TText>
               <TText style={{ color: colors.muted, fontSize: 12 }}>{timeAgo(issue.created_at)}</TText>
             </View>
-            {issue.media_url && <Image source={{ uri: issue.media_url }} style={{ width: "100%", height: 220, borderRadius: 12, marginTop: 12 }} />}
+            {issue.media_url && (
+              issue.media_type === "video" ? (
+                <View style={{ marginTop: 12 }}>
+                  <VideoPlayer uri={issue.media_url} height={240} />
+                </View>
+              ) : (
+                <Image source={{ uri: issue.media_url }} style={{ width: "100%", height: 220, borderRadius: 12, marginTop: 12 }} />
+              )
+            )}
             <TText style={{ marginTop: 12, lineHeight: 22, fontSize: 14 }}>{issue.description}</TText>
             <View style={styles.reporterRow}>
               <View style={styles.avatar}>
@@ -145,7 +167,13 @@ export default function IssueDetail() {
               <View style={{ flex: 1, paddingBottom: 16 }}>
                 <TText weight="bold" style={{ fontSize: 13 }}>{e.text}</TText>
                 <TText style={{ color: colors.muted, fontSize: 11, marginTop: 2 }}>{e.user_name} • {timeAgo(e.created_at)}</TText>
-                {e.media_url && <Image source={{ uri: e.media_url }} style={{ width: "100%", height: 180, borderRadius: 10, marginTop: 8 }} />}
+                {e.media_url && (
+                  e.media_type === "video" ? (
+                    <View style={{ marginTop: 8 }}><VideoPlayer uri={e.media_url} height={180} /></View>
+                  ) : (
+                    <Image source={{ uri: e.media_url }} style={{ width: "100%", height: 180, borderRadius: 10, marginTop: 8 }} />
+                  )
+                )}
               </View>
             </View>
           ))}

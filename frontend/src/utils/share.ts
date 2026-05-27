@@ -1,7 +1,10 @@
 /**
- * Cross-platform share helper for campaigns + membership card.
- * Guaranteed soft-fail: when native/web share is unavailable or denied,
- * we fall back to clipboard copy and report the mode to the caller.
+ * Cross-platform share + save helpers.
+ *
+ * Rule: never fake success. On native we call the real OS share sheet directly;
+ * on web we use the Web Share API. Only fall back to clipboard when the platform
+ * can't share at all - and clearly report that mode so callers can show the
+ * correct message.
  */
 import { Platform, Share } from "react-native";
 import * as Sharing from "expo-sharing";
@@ -13,13 +16,21 @@ import { LOGO_URL } from "@/src/theme";
 
 const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://ckd.app";
 
+export type ShareResult =
+  | { ok: true; mode: "native" | "web-share" | "clipboard" }
+  | { ok: false; mode: "cancelled" | "error" };
+
+export type SaveResult =
+  | { ok: true; mode: "gallery" | "download" | "shared" | "saved" | "clipboard" }
+  | { ok: false; mode: "cancelled" | "error" };
+
 export function buildCampaignCaption(c: { id?: string; title: string; description: string; date?: string; location?: string }) {
   const link = `${APP_URL}/campaigns/${c.id || ""}`;
   return [
     `🚩 ${c.title}`,
     c.location && c.date ? `📍 ${c.location}  •  📅 ${c.date}` : c.location ? `📍 ${c.location}` : c.date ? `📅 ${c.date}` : "",
     "",
-    c.description?.slice(0, 160) || "",
+    c.description?.slice(0, 200) || "",
     "",
     "आइए साथ चलें — *युवा जागे, देश बदले*",
     "Cockroach Kranti Dal (CKD)",
@@ -27,141 +38,142 @@ export function buildCampaignCaption(c: { id?: string; title: string; descriptio
   ].filter(Boolean).join("\n");
 }
 
-async function copyAsFallback(text: string) {
-  try {
-    await Clipboard.setStringAsync(text);
-    return { ok: true, mode: "clipboard" as const };
-  } catch {
-    return { ok: false, mode: "error" as const };
-  }
+export function buildIssueCaption(i: { id?: string; title: string; description: string; city?: string; area?: string; state?: string; status?: string }) {
+  const link = `${APP_URL}/issues/${i.id || ""}`;
+  const statusLabel = i.status === "resolved" ? "हल हो गई" : i.status === "in_progress" ? "काम चालू" : "खुली";
+  const loc = [i.area, i.city, i.state].filter(Boolean).join(", ");
+  return [
+    `⚠️ ${i.title}`,
+    loc && `📍 ${loc}`,
+    `📊 स्थिति: ${statusLabel}`,
+    "",
+    i.description?.slice(0, 200) || "",
+    "",
+    "क्या आप इसमें मदद कर सकते हैं?",
+    "Cockroach Kranti Dal (CKD) — युवा जागे, देश बदले",
+    link,
+  ].filter(Boolean).join("\n");
 }
 
 /**
- * Share a campaign. Always returns ok:true unless the user cancels.
- * Tries: Web Share (with files) → Web Share (text) → native Share → expo-sharing → clipboard.
+ * Open the real native share sheet. NEVER fakes success.
+ * - Native: React Native `Share.share` opens the system share dialog.
+ * - Web: navigator.share if available.
+ * - Fallback: copy to clipboard.
  */
-export async function shareCampaign(
-  campaign: { id?: string; title: string; description: string; date?: string; location?: string; cover_url?: string | null },
-) {
-  const caption = buildCampaignCaption(campaign);
-  const title = `CKD — ${campaign.title}`;
-
-  // Web: try the Web Share API first
-  if (Platform.OS === "web" && typeof navigator !== "undefined" && (navigator as any).share) {
+async function shareText(title: string, text: string): Promise<ShareResult> {
+  if (Platform.OS === "web") {
+    if (typeof navigator !== "undefined" && (navigator as any).share) {
+      try {
+        await (navigator as any).share({ title, text });
+        return { ok: true, mode: "web-share" };
+      } catch (e: any) {
+        if (e?.name === "AbortError") return { ok: false, mode: "cancelled" };
+        // fall through to clipboard
+      }
+    }
     try {
-      await (navigator as any).share({ title, text: caption, url: `${APP_URL}/campaigns/${campaign.id || ""}` });
-      return { ok: true, mode: "web-share" as const };
-    } catch (e: any) {
-      if (e?.name === "AbortError") return { ok: false, mode: "cancelled" as const };
-      // fall through
+      await Clipboard.setStringAsync(text);
+      return { ok: true, mode: "clipboard" };
+    } catch {
+      return { ok: false, mode: "error" };
     }
-    return copyAsFallback(caption);
   }
 
-  // Native: try React Native Share, then expo-sharing if available, then clipboard
+  // Native iOS/Android - open the OS share sheet directly.
   try {
-    const result = await Share.share({ title, message: caption });
-    if ((result as any)?.action === Share.dismissedAction) return { ok: false, mode: "cancelled" as const };
-    return { ok: true, mode: "text" as const };
+    const result = await Share.share({ title, message: text });
+    if ((result as any)?.action === Share.dismissedAction) return { ok: false, mode: "cancelled" };
+    return { ok: true, mode: "native" };
   } catch {
-    // continue
-  }
-  try {
-    const isAvail = await Sharing.isAvailableAsync();
-    if (isAvail) {
-      // expo-sharing wants a file, not text; we don't have one here so we skip if there's nothing to share
+    // Try expo-sharing if Share threw (rare)
+    try {
+      await Clipboard.setStringAsync(text);
+      return { ok: true, mode: "clipboard" };
+    } catch {
+      return { ok: false, mode: "error" };
     }
-  } catch {
-    // ignore
   }
-  return copyAsFallback(caption);
+}
+
+export function shareCampaign(c: { id?: string; title: string; description: string; date?: string; location?: string; cover_url?: string | null }) {
+  return shareText(`CKD — ${c.title}`, buildCampaignCaption(c));
+}
+
+export function shareIssue(i: { id?: string; title: string; description: string; city?: string; area?: string; state?: string; status?: string }) {
+  return shareText(`CKD — ${i.title}`, buildIssueCaption(i));
 }
 
 /**
- * Saves the membership card to the device gallery (native) or downloads it (web).
- * Always tries multiple fallbacks; only returns ok:false if everything fails or user cancels.
+ * Save the membership card as an IMAGE to the device gallery (native) or
+ * trigger a real browser download (web).
  */
-export async function saveMembershipCard(cardRef: { current: any }, name: string) {
+export async function saveMembershipCard(cardRef: { current: any }, name: string): Promise<SaveResult> {
   const caption = `मैं Cockroach Kranti Dal (CKD) का सदस्य हूँ — युवा जागे, देश बदले 🚩\n— ${name}`;
 
-  // Native: capture PNG -> save to Photos via MediaLibrary
   if (Platform.OS !== "web") {
-    let uri: string | null = null;
+    // Capture the view to PNG
+    let uri: string;
     try {
       uri = await captureRef(cardRef, { format: "png", quality: 0.95 });
     } catch {
-      // capture failed; fall back to text share
-      try {
-        await Share.share({ title: "CKD सदस्यता कार्ड", message: caption });
-        return { ok: true, mode: "text" as const };
-      } catch {
-        return copyAsFallback(caption);
-      }
+      return { ok: false, mode: "error" };
     }
-    // Try MediaLibrary save
+
+    // Save to gallery (requires permission)
     try {
-      const perm = await MediaLibrary.requestPermissionsAsync();
-      if (perm.status === "granted") {
-        const asset = await MediaLibrary.createAssetAsync(uri);
+      const existing = await MediaLibrary.getPermissionsAsync();
+      let status = existing.status;
+      if (status !== "granted") {
+        const req = await MediaLibrary.requestPermissionsAsync();
+        status = req.status;
+      }
+      if (status !== "granted") {
+        // Permission denied - fall back to share sheet so user can save manually
         try {
-          // best-effort: place in a CKD album
-          const album = await MediaLibrary.getAlbumAsync("CKD");
-          if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-          else await MediaLibrary.createAlbumAsync("CKD", asset, false);
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(uri, { dialogTitle: "CKD सदस्यता कार्ड", mimeType: "image/png" });
+            return { ok: true, mode: "shared" };
+          }
         } catch {
-          // album step is non-critical
+          // ignore
         }
-        return { ok: true, mode: "gallery" as const };
+        return { ok: false, mode: "error" };
       }
-    } catch {
-      // ignore and fall through to share
-    }
-    // Fallback: open share sheet so user can save manually
-    try {
-      const isAvail = await Sharing.isAvailableAsync();
-      if (isAvail) {
-        await Sharing.shareAsync(uri, { dialogTitle: "CKD सदस्यता कार्ड", mimeType: "image/png" });
-        return { ok: true, mode: "shared" as const };
+
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      try {
+        const album = await MediaLibrary.getAlbumAsync("CKD");
+        if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        else await MediaLibrary.createAlbumAsync("CKD", asset, false);
+      } catch {
+        // album organisation is best-effort
       }
-      const dest = `${FileSystem.documentDirectory}ckd-membership.png`;
-      await FileSystem.copyAsync({ from: uri, to: dest });
-      return { ok: true, mode: "saved" as const, path: dest };
+      return { ok: true, mode: "gallery" };
     } catch {
-      return copyAsFallback(caption);
+      // Persisting failed - try share sheet
+      try {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, { dialogTitle: "CKD सदस्यता कार्ड", mimeType: "image/png" });
+          return { ok: true, mode: "shared" };
+        }
+        const dest = `${FileSystem.documentDirectory}ckd-membership.png`;
+        await FileSystem.copyAsync({ from: uri, to: dest });
+        return { ok: true, mode: "saved" };
+      } catch {
+        return { ok: false, mode: "error" };
+      }
     }
   }
 
-  // Web: capture to data URI then trigger browser download / Web Share
-  let dataUrl: string | null = null;
+  // Web: capture to data-uri then trigger a real browser download
+  let dataUrl: string;
   try {
     dataUrl = await captureRef(cardRef, { format: "png", quality: 0.95, result: "data-uri" } as any);
   } catch {
-    // capture failed - try web share text or clipboard
-    if (typeof navigator !== "undefined" && (navigator as any).share) {
-      try {
-        await (navigator as any).share({ title: "CKD सदस्यता कार्ड", text: caption });
-        return { ok: true, mode: "web-text" as const };
-      } catch (e: any) {
-        if (e?.name === "AbortError") return { ok: false, mode: "cancelled" as const };
-      }
-    }
-    return copyAsFallback(caption);
+    return { ok: false, mode: "error" };
   }
 
-  // Try Web Share API with the file
-  if (dataUrl && typeof navigator !== "undefined" && (navigator as any).share) {
-    try {
-      const blob = await (await fetch(dataUrl)).blob();
-      const file = new File([blob], "ckd-membership.png", { type: "image/png" });
-      if ((navigator as any).canShare?.({ files: [file] })) {
-        await (navigator as any).share({ files: [file], title: "CKD सदस्यता कार्ड", text: caption });
-        return { ok: true, mode: "web-file" as const };
-      }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return { ok: false, mode: "cancelled" as const };
-    }
-  }
-  // Trigger browser download
   if (dataUrl && typeof document !== "undefined") {
     try {
       const a = document.createElement("a");
@@ -170,15 +182,12 @@ export async function saveMembershipCard(cardRef: { current: any }, name: string
       document.body.appendChild(a);
       a.click();
       a.remove();
-      return { ok: true, mode: "download" as const };
+      return { ok: true, mode: "download" };
     } catch {
       // continue
     }
   }
-  return copyAsFallback(caption);
+  return { ok: false, mode: "error" };
 }
-
-// Backwards-compat: keep the old name as alias.
-export const shareMembershipCard = saveMembershipCard;
 
 export const LOGO_REMOTE = LOGO_URL;
