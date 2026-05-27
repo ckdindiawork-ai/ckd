@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { TText } from "@/src/components/ui";
@@ -27,6 +27,8 @@ export default function StatesIndex() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Auto-refresh counts whenever this screen regains focus.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // Sorted: states with counts first (desc), then alphabetical
   const data = [...STATES].sort((a, b) => (counts[b] || 0) - (counts[a] || 0) || a.localeCompare(b, "hi"));

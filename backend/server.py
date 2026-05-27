@@ -925,6 +925,18 @@ async def seed_data():
         # Backfill is_featured for older campaigns
         await db.campaigns.update_many({"is_featured": {"$exists": False}}, {"$set": {"is_featured": False}})
 
+    # Backfill state on issues that pre-date the state field.
+    city_to_state = {
+        "दिल्ली": "दिल्ली", "मुंबई": "महाराष्ट्र", "जयपुर": "राजस्थान", "लखनऊ": "उत्तर प्रदेश",
+        "बेंगलुरु": "कर्नाटक", "चेन्नई": "तमिलनाडु", "हैदराबाद": "तेलंगाना", "पुणे": "महाराष्ट्र",
+        "कोलकाता": "पश्चिम बंगाल", "अहमदाबाद": "गुजरात", "इंदौर": "मध्य प्रदेश", "भोपाल": "मध्य प्रदेश",
+    }
+    for city, state in city_to_state.items():
+        await db.issues.update_many(
+            {"city": city, "$or": [{"state": {"$exists": False}}, {"state": None}, {"state": ""}]},
+            {"$set": {"state": state}},
+        )
+
     # Seed sample issues
     if await db.issues.count_documents({}) == 0:
         m = await db.users.find_one({"mobile": "9000000001"})
