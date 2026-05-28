@@ -16,6 +16,38 @@ import { timeAgo } from "@/src/utils/format";
 
 type Tab = "dashboard" | "members" | "campaigns" | "moderation" | "announcements";
 
+/**
+ * Cross-platform confirm — Alert.alert on web doesn't reliably render
+ * destructive buttons; this falls back to window.confirm there. Pass
+ * `confirmLabel="हटाएँ"` etc. for native styling.
+ */
+function confirmAction(
+  title: string,
+  message: string,
+  onConfirm?: () => void | Promise<void>,
+  confirmLabel = "ठीक है",
+) {
+  if (!onConfirm) {
+    // info-only popup
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined") window.alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+    return;
+  }
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(`${title}\n\n${message}`)) {
+      void onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: "रद्द", style: "cancel" },
+    { text: confirmLabel, style: "destructive", onPress: () => { void onConfirm(); } },
+  ]);
+}
+
 export default function Admin() {
   const router = useRouter();
   const { user } = useAuth();
@@ -90,11 +122,12 @@ export default function Admin() {
         </View>
       </LinearGradient>
 
-      <View style={{ backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+      <View style={{ backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.border, height: 56 }}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: 10, alignItems: "center", gap: 6 }}
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: 12, alignItems: "center", gap: 6 }}
         >
           {[
             { k: "dashboard", l: "डैशबोर्ड", i: "stats-chart" },
@@ -263,12 +296,11 @@ export default function Admin() {
                       <TText weight="bold" style={{ color: colors.primary, fontSize: 11 }}>संपादन</TText>
                     </Pressable>
                     <Pressable onPress={() => {
-                      Alert.alert("घोषणा हटाएँ?", `"${a.title}" स्थायी रूप से हटा दी जाएगी।`, [
-                        { text: "रद्द", style: "cancel" },
-                        { text: "हटाएँ", style: "destructive", onPress: async () => {
-                          try { await api.del(`/admin/announcements/${a.id}`); await load(); } catch (e: any) { Alert.alert("त्रुटि", e.message); }
-                        } },
-                      ]);
+                      const doDelete = async () => {
+                        try { await api.del(`/admin/announcements/${a.id}`); await load(); }
+                        catch (e: any) { confirmAction("त्रुटि", e.message, undefined); }
+                      };
+                      confirmAction("घोषणा हटाएँ?", `"${a.title}" स्थायी रूप से हटा दी जाएगी।`, doDelete, "हटाएँ");
                     }} style={styles.deleteBtn} testID={`admin-announce-del-${a.id}`}>
                       <Ionicons name="trash-outline" size={16} color="#fff" />
                       <TText weight="bold" style={{ color: "#fff", fontSize: 11 }}>हटाएँ</TText>

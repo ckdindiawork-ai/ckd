@@ -37,14 +37,16 @@ export default function Leaderboard() {
           <TText style={{ color: "rgba(255,255,255,0.7)", fontSize: 13 }}>सबसे ज़्यादा क्रांति पॉइंट्स वाले क्रांतिकारी</TText>
         </View>
       </LinearGradient>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingVertical: 12, gap: 8 }}>
-        <Pressable onPress={() => setCity("")} style={[styles.chip, !city && styles.chipActive]}><TText weight="bold" style={{ color: !city ? "#fff" : colors.primary, fontSize: 12 }}>सारे भारत</TText></Pressable>
-        {CITIES.map((c) => (
-          <Pressable key={c} onPress={() => setCity(c)} style={[styles.chip, city === c && styles.chipActive]}>
-            <TText weight="bold" style={{ color: city === c ? "#fff" : colors.primary, fontSize: 12 }}>{c}</TText>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={styles.tabBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabBarContent}>
+          <Pressable onPress={() => setCity("")} style={[styles.chip, !city && styles.chipActive]}><TText weight="bold" style={{ color: !city ? "#fff" : colors.primary, fontSize: 12, includeFontPadding: false }}>सारे भारत</TText></Pressable>
+          {CITIES.map((c) => (
+            <Pressable key={c} onPress={() => setCity(c)} style={[styles.chip, city === c && styles.chipActive]}>
+              <TText weight="bold" style={{ color: city === c ? "#fff" : colors.primary, fontSize: 12, includeFontPadding: false }}>{c}</TText>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
@@ -80,8 +82,10 @@ const styles = StyleSheet.create({
   hero: { paddingBottom: 16 },
   back: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
   trophyBox: { width: 72, height: 72, borderRadius: 36, backgroundColor: "rgba(244,180,0,0.15)", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: colors.accent },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface },
-  chipActive: { backgroundColor: colors.primary },
+  chip: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 14, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.surface },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  tabBar: { backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.border },
+  tabBarContent: { paddingHorizontal: spacing.lg, paddingVertical: 10, gap: 6, alignItems: "center" },
   rank: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary + "10", alignItems: "center", justifyContent: "center" },
   rankTop: { backgroundColor: colors.accent + "20" },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" },
