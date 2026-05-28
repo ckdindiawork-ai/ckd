@@ -9,6 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { Card, EmptyState, TText, Pill } from "@/src/components/ui";
+import { Skeleton } from "@/src/components/Skeleton";
 import { useToast } from "@/src/components/Toast";
 import { shareCampaign } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
@@ -20,6 +21,7 @@ export default function Campaigns() {
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "city">("all");
 
   const onShare = async (c: any) => {
@@ -31,11 +33,15 @@ export default function Campaigns() {
 
   const load = useCallback(async () => {
     const q = filter === "city" && user?.city ? `?city=${encodeURIComponent(user.city)}` : "";
-    const data = await api.get(`/campaigns${q}`);
-    setCampaigns(data);
+    try {
+      const data = await api.get(`/campaigns${q}`);
+      setCampaigns(data);
+    } finally {
+      setInitialLoading(false);
+    }
   }, [filter, user?.city]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setInitialLoading(true); load(); }, [load]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
@@ -63,11 +69,21 @@ export default function Campaigns() {
       </View>
 
       <FlatList
-        data={campaigns}
+        data={initialLoading ? [] : campaigns}
         keyExtractor={(i) => i.id}
         contentContainerStyle={{ padding: spacing.lg, gap: 14, paddingBottom: 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={colors.primary} />}
-        ListEmptyComponent={<EmptyState icon="megaphone-outline" title="कोई अभियान नहीं" body="जल्द ही नए अभियान शुरू होंगे।" />}
+        ListEmptyComponent={
+          initialLoading ? (
+            <View testID="campaigns-skeleton">
+              <Skeleton.CampaignCard />
+              <Skeleton.CampaignCard />
+              <Skeleton.CampaignCard />
+            </View>
+          ) : (
+            <EmptyState icon="megaphone-outline" title="कोई अभियान नहीं" body="जल्द ही नए अभियान शुरू होंगे।" />
+          )
+        }
         renderItem={({ item }) => (
           <Pressable onPress={() => router.push(`/campaigns/${item.id}`)} testID={`campaign-card-${item.id}`}>
             <Card style={{ padding: 0, overflow: "hidden" }}>

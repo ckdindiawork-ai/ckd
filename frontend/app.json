@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "in.ckd.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#3A1C71"

@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "@/src/auth";
 import { api } from "@/src/api";
 import { Card, Pill, Section, StatusBadge, TText } from "@/src/components/ui";
+import { Skeleton } from "@/src/components/Skeleton";
 import { colors, fonts, LOGO_URL, radius, spacing } from "@/src/theme";
 import { getCategory, timeAgo } from "@/src/utils/format";
 
@@ -25,6 +26,7 @@ export default function Home() {
   const [issues, setIssues] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [carouselIdx, setCarouselIdx] = useState(0);
   const carouselRef = useRef<FlatList<any>>(null);
 
@@ -45,6 +47,8 @@ export default function Home() {
       setAnnouncements(n.filter((x: any) => x.type === "announcement").slice(0, 3));
     } catch {
       // noop
+    } finally {
+      setInitialLoading(false);
     }
   }, []);
 
@@ -92,6 +96,16 @@ export default function Home() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         showsVerticalScrollIndicator={false}
       >
+        {/* Initial loading — skeleton hero + cards */}
+        {initialLoading && featured.length === 0 && campaigns.length === 0 && issues.length === 0 && (
+          <View style={{ paddingTop: spacing.lg, paddingHorizontal: spacing.lg }} testID="home-skeleton">
+            <Skeleton.Block height={180} radius={16} style={{ marginBottom: 16 }} />
+            <Skeleton width={140} height={18} style={{ marginBottom: 12 }} />
+            <Skeleton.CampaignCard />
+            <Skeleton.CampaignCard />
+          </View>
+        )}
+
         {/* Featured campaigns carousel */}
         {featured.length > 0 && (
           <View style={{ paddingTop: spacing.lg }}>
