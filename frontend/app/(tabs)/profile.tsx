@@ -15,6 +15,7 @@ import { useToast } from "@/src/components/Toast";
 import { saveMembershipCard } from "@/src/utils/share";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 import { timeAgo } from "@/src/utils/format";
+import { BUILD_INFO } from "@/src/build-info";
 
 export default function Profile() {
   const router = useRouter();
@@ -198,9 +199,95 @@ export default function Profile() {
             <Ionicons name="log-out-outline" size={18} color={colors.energy} />
             <TText weight="bold" style={{ color: colors.energy }}>लॉग आउट</TText>
           </Pressable>
+
+          {/* ===== BUILD IDENTIFIER ============================================
+              Surfaces exactly which commit + profile is bundled into THIS
+              installed binary. If this block shows stale info after EAS Build,
+              the build hooks did NOT run and the APK is stale.
+              Tap = expand details, Long-press = copy fingerprint.            */}
+          <BuildStampCard />
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/* ---------- Build stamp ---------- */
+function BuildStampCard() {
+  const [expanded, setExpanded] = useState(false);
+  const { toast } = useToast();
+  const stale = BUILD_INFO.commit === "STAMPED_AT_BUILD" || BUILD_INFO.commit === "no-git";
+  const dirty = BUILD_INFO.commit.includes("+dirty");
+  const profileColor =
+    BUILD_INFO.profile === "production" ? colors.success :
+    BUILD_INFO.profile === "preview" ? colors.accent :
+    BUILD_INFO.profile === "development" ? colors.primary :
+    colors.muted;
+
+  const fingerprint = `CKD v${BUILD_INFO.version} (build ${BUILD_INFO.versionCode})\ncommit: ${BUILD_INFO.commit}\nbranch: ${BUILD_INFO.branch}\nprofile: ${BUILD_INFO.profile}\nrunner: ${BUILD_INFO.runner}\neasBuildId: ${BUILD_INFO.easBuildId || "—"}\nbuiltAt: ${BUILD_INFO.builtAt}`;
+
+  const onCopy = async () => {
+    try {
+      const Clipboard = require("expo-clipboard");
+      await Clipboard.setStringAsync(fingerprint);
+      toast.success("बिल्ड डिटेल्स कॉपी हो गईं");
+    } catch {
+      toast.error("कॉपी नहीं हो सका");
+    }
+  };
+
+  return (
+    <Pressable
+      onPress={() => setExpanded((v) => !v)}
+      onLongPress={onCopy}
+      delayLongPress={500}
+      style={styles.buildStamp}
+      testID="build-stamp"
+    >
+      <View style={styles.buildStampRow}>
+        <Ionicons name={stale ? "warning" : "git-branch"} size={11} color={stale ? colors.energy : colors.muted} />
+        <TText style={[styles.buildStampText, stale && { color: colors.energy }]}>
+          v{BUILD_INFO.version} ({BUILD_INFO.versionCode}) · {BUILD_INFO.commit} · {BUILD_INFO.builtAt.substring(0, 16).replace("T", " ")}
+        </TText>
+        <View style={[styles.buildStampPill, { backgroundColor: profileColor + "22", borderColor: profileColor }]}>
+          <TText style={[styles.buildStampPillText, { color: profileColor }]}>{BUILD_INFO.profile.toUpperCase()}</TText>
+        </View>
+      </View>
+
+      {expanded && (
+        <View style={styles.buildStampDetails}>
+          <DetailRow k="commit" v={BUILD_INFO.commit} warn={dirty} />
+          <DetailRow k="branch" v={BUILD_INFO.branch} />
+          <DetailRow k="profile" v={BUILD_INFO.profile} />
+          <DetailRow k="runner" v={BUILD_INFO.runner} />
+          <DetailRow k="easBuildId" v={BUILD_INFO.easBuildId || "—"} />
+          <DetailRow k="versionCode" v={String(BUILD_INFO.versionCode)} />
+          <DetailRow k="builtAt" v={BUILD_INFO.builtAt} />
+          <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 8 }}>
+            <Pressable onPress={onCopy} style={styles.copyBtn} testID="build-stamp-copy">
+              <Ionicons name="copy-outline" size={11} color={colors.muted} />
+              <TText style={styles.buildStampText}>विवरण कॉपी करें</TText>
+            </Pressable>
+          </View>
+          {stale && (
+            <TText style={[styles.buildStampText, { color: colors.energy, textAlign: "center", marginTop: 6 }]}>
+              ⚠ बिल्ड स्टैम्प missing — EAS hooks नहीं चले। `yarn install` फिर से चलाएँ।
+            </TText>
+          )}
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+function DetailRow({ k, v, warn }: { k: string; v: string; warn?: boolean }) {
+  return (
+    <View style={styles.detailRow}>
+      <TText style={[styles.buildStampText, { width: 90 }]}>{k}</TText>
+      <TText style={[styles.buildStampText, { flex: 1, color: warn ? colors.energy : colors.text }]} numberOfLines={1}>
+        {v}
+      </TText>
+    </View>
   );
 }
 
@@ -242,5 +329,13 @@ const styles = StyleSheet.create({
   subTab: { flex: 1, paddingVertical: 8, borderRadius: 999, alignItems: "center" },
   subTabActive: { backgroundColor: colors.accent },
   thumb: { width: 64, height: 64, borderRadius: 12 },
-  logout: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, marginTop: 24, marginBottom: 20 },
+  logout: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, marginTop: 24, marginBottom: 8 },
+  buildStamp: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
+  buildStampRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  buildStampText: { color: colors.muted, fontSize: 10, fontFamily: "monospace" },
+  buildStampPill: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, borderWidth: 1 },
+  buildStampPillText: { fontSize: 9, fontFamily: "monospace", fontWeight: "700" },
+  buildStampDetails: { marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, gap: 4 },
+  detailRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  copyBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border },
 });

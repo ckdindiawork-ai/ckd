@@ -147,6 +147,14 @@ export default function Login() {
             <Ionicons name="shield-checkmark" size={14} color={colors.muted} />
             <TText style={{ color: colors.muted, fontSize: 12, marginLeft: 6 }}>आगे बढ़कर आप गोपनीयता नीति से सहमत होते हैं</TText>
           </View>
+
+          {/* QA/Debug — verify which APK build is installed (no login required). */}
+          <Pressable onPress={() => router.push("/buildinfo")} style={styles.buildLink} testID="login-build-info">
+            <Ionicons name="git-branch" size={10} color={colors.muted} />
+            <TText style={{ color: colors.muted, fontSize: 10, fontFamily: "monospace" }}>
+              बिल्ड पहचान देखें
+            </TText>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -192,4 +200,5 @@ const styles = StyleSheet.create({
   },
   signupRow: { flexDirection: "row", justifyContent: "center", marginTop: spacing.xl },
   legal: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 16 },
+  buildLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: 12, marginTop: 4 },
 });

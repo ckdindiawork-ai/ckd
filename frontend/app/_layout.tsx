@@ -15,9 +15,23 @@ import { Mukta_500Medium, Mukta_700Bold, Mukta_800ExtraBold } from "@expo-google
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { AuthProvider } from "@/src/auth";
 import { ToastProvider } from "@/src/components/Toast";
+import { BUILD_INFO } from "@/src/build-info";
 
 // Keep the native splash visible from cold start until icon fonts register.
 SplashScreen.preventAutoHideAsync();
+
+// Banner-log build identity at module load so `adb logcat *:S ReactNativeJS:V`
+// shows EXACTLY which commit was compiled into the installed binary.
+// This fires once per cold start, before React mounts.
+console.log(
+  `\n========================================\n` +
+  `[CKD-BUILD] v${BUILD_INFO.version} (vc=${BUILD_INFO.versionCode})\n` +
+  `[CKD-BUILD] commit=${BUILD_INFO.commit} branch=${BUILD_INFO.branch}\n` +
+  `[CKD-BUILD] profile=${BUILD_INFO.profile} runner=${BUILD_INFO.runner}\n` +
+  `[CKD-BUILD] easBuildId=${BUILD_INFO.easBuildId || "—"}\n` +
+  `[CKD-BUILD] builtAt=${BUILD_INFO.builtAt}\n` +
+  `========================================\n`
+);
 
 export default function RootLayout() {
   const [iconsLoaded, iconsErr] = useIconFonts();

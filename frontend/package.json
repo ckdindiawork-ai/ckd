@@ -3,12 +3,18 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "node ./scripts/stamp-build.js && expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "lint": "expo lint"
+    "android": "node ./scripts/stamp-build.js && expo start --android",
+    "ios": "node ./scripts/stamp-build.js && expo start --ios",
+    "web": "node ./scripts/stamp-build.js && expo start --web",
+    "lint": "expo lint",
+    "stamp-build": "node ./scripts/stamp-build.js",
+    "build-doctor": "node ./scripts/build-doctor.js",
+    "prebuild-eas": "node ./scripts/build-doctor.js && node ./scripts/stamp-build.js",
+    "postinstall": "node ./scripts/stamp-build.js || true",
+    "eas-build-pre-install": "node ./scripts/stamp-build.js",
+    "eas-build-post-install": "node ./scripts/stamp-build.js"
   },
   "dependencies": {
     "@babel/runtime": "^7.20.6",
