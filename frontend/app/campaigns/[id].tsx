@@ -126,31 +126,31 @@ export default function CampaignDetail() {
           {/* Phase 2/P3 — multi-media hero carousel
               Falls back to legacy cover_url if media[] not provided yet.
               Single-image mode renders as a normal full-bleed image (no dots). */}
-          {(() => {
-            const mediaList = Array.isArray(c.media) && c.media.length > 0
-              ? c.media
-              : (c.cover_url ? [{ type: "image" as const, url: c.cover_url }] : []);
-            return (
-              <View style={styles.hero}>
-                {mediaList.length > 0 ? (
-                  <MediaCarousel items={mediaList} height={styles.hero.height as number} />
-                ) : null}
-                <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.7)"]} style={StyleSheet.absoluteFill} pointerEvents="none" />
-                <SafeAreaView edges={["top"]} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-                  <Pressable onPress={() => router.back()} style={styles.back} testID="campaign-back">
-                    <Ionicons name="arrow-back" size={22} color="#fff" />
-                  </Pressable>
-                </SafeAreaView>
-                <View style={styles.heroBottom} pointerEvents="box-none">
-                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                    <Pill label={c.location} icon="location" bg="rgba(255,255,255,0.2)" color="#fff" />
-                    <Pill label={formatDate(c.date)} icon="calendar" bg="rgba(255,255,255,0.2)" color="#fff" />
-                  </View>
-                  <TText weight="display" style={{ color: "#fff", fontSize: 26, marginTop: 8 }}>{c.title}</TText>
-                </View>
+          <View style={styles.hero}>
+            {(() => {
+              // Phase 2/P3 — render carousel if media[] present, else fall back
+              // to legacy single cover_url, else nothing. Outside any IIFE so
+              // hero JSX is stable regardless of media shape.
+              const mediaList: any[] = Array.isArray(c.media) && c.media.length > 0
+                ? c.media
+                : (c.cover_url ? [{ type: "image", url: c.cover_url }] : []);
+              if (mediaList.length === 0) return null;
+              return <MediaCarousel items={mediaList} height={styles.hero.height as number} />;
+            })()}
+            <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.7)"]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+            <SafeAreaView edges={["top"]} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+              <Pressable onPress={() => router.back()} style={styles.back} testID="campaign-back">
+                <Ionicons name="arrow-back" size={22} color="#fff" />
+              </Pressable>
+            </SafeAreaView>
+            <View style={styles.heroBottom} pointerEvents="box-none">
+              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+                <Pill label={c.location} icon="location" bg="rgba(255,255,255,0.2)" color="#fff" />
+                <Pill label={formatDate(c.date)} icon="calendar" bg="rgba(255,255,255,0.2)" color="#fff" />
               </View>
-            );
-          })()}
+              <TText weight="display" style={{ color: "#fff", fontSize: 26, marginTop: 8 }}>{c.title}</TText>
+            </View>
+          </View>
 
           <View style={{ padding: spacing.lg }}>
             <Card>

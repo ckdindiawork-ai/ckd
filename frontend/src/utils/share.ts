@@ -18,12 +18,23 @@ import { LOGO_URL } from "@/src/theme";
 // previews with OG meta and an Android deep-link redirect. Once
 // app.ckdindia.com DNS is wired, switch SHARE_HOST to that domain so links
 // are short + branded.
-const SHARE_HOST =
-  process.env.EXPO_PUBLIC_SHARE_HOST ||
-  process.env.EXPO_PUBLIC_BACKEND_URL ||
-  "https://grassroot-action.preview.emergentagent.com";
+//
+// Resolve at module load with defensive fallback chain. process.env access on
+// Hermes/RN is statically replaced at build time, but wrap in try just in case.
+const SHARE_HOST = (() => {
+  try {
+    return (
+      process.env.EXPO_PUBLIC_SHARE_HOST ||
+      process.env.EXPO_PUBLIC_BACKEND_URL ||
+      "https://grassroot-action.preview.emergentagent.com"
+    );
+  } catch {
+    return "https://grassroot-action.preview.emergentagent.com";
+  }
+})();
 
 function buildShareUrl(kind: "campaign" | "issue", id: string): string {
+  if (!id) return SHARE_HOST.replace(/\/$/, "");
   return `${SHARE_HOST.replace(/\/$/, "")}/api/share/${kind}/${id}`;
 }
 

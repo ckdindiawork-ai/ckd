@@ -4,13 +4,13 @@
  * pre-install + post-install EAS hooks will overwrite it during cloud builds.
  */
 export const BUILD_INFO = {
-  commit: "ef218e6b+dirty",
+  commit: "26e784c6+dirty",
   branch: "main",
-  builtAt: "2026-05-28T08:22:18Z",
+  builtAt: "2026-05-28T09:57:55Z",
   profile: "local-dev",
   runner: "local-dev",
   easBuildId: "",
-  versionCode: 8,
+  versionCode: 9,
   version: "1.0.0",
 } as const;
 

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Kranti Dal",
+    "name": "CKD India",
     "slug": "ckd-kranti-dal",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "in.ckd.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#3A1C71"
@@ -32,7 +32,7 @@
           "autoVerify": true,
           "category": ["BROWSABLE", "DEFAULT"],
           "data": [
-            { "scheme": "https", "host": "app.ckdindia.com" }
+            { "scheme": "https", "host": "app.ckdindia.com", "pathPrefix": "/" }
           ]
         },
         {
