@@ -1,7 +1,7 @@
 /**
- * Submit reset token + new password. Token is delivered out-of-band (email).
+ * Submit reset OTP + new password. User receives a 6-digit code via email.
  */
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -14,22 +14,34 @@ import { colors, fonts, radius, spacing } from "@/src/theme";
 
 export default function Reset() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ token?: string }>();
+  const params = useLocalSearchParams<{ email?: string; otp?: string }>();
   const { signIn } = useAuth();
   const { toast } = useToast();
-  const [token, setToken] = useState(params.token || "");
+  const [email, setEmail] = useState(params.email || "");
+  const [otp, setOtp] = useState(params.otp || "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const otpRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    // Auto-focus OTP field if email is already filled (came from /forgot screen).
+    if (email && !otp) setTimeout(() => otpRef.current?.focus(), 250);
+  }, [email, otp]);
 
   const submit = async () => {
-    if (!token.trim()) return toast.error("रीसेट टोकन भरें");
+    if (!email.trim() || !email.includes("@")) return toast.error("सही ईमेल भरें");
+    if (!otp.trim() || otp.trim().length !== 6 || !/^\d{6}$/.test(otp.trim())) return toast.error("6 अंकों का कोड भरें");
     if (password.length < 8) return toast.error("पासवर्ड कम से कम 8 अक्षरों का हो");
     if (password !== confirm) return toast.error("दोनों पासवर्ड मेल नहीं खाते");
     setLoading(true);
     try {
-      const r = await api.post("/auth/reset-password", { token: token.trim(), new_password: password });
+      const r = await api.post("/auth/reset-password", {
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+        new_password: password,
+      });
       await signIn(r.token, r.user);
       toast.success("पासवर्ड बदल गया");
       router.replace("/");
@@ -49,25 +61,48 @@ export default function Reset() {
       </View>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.xl }} keyboardShouldPersistTaps="handled">
-          <TText style={{ color: colors.muted, marginBottom: spacing.lg, lineHeight: 22 }}>
-            ईमेल में मिला रीसेट टोकन और नया पासवर्ड भरें।
-          </TText>
+          <View style={styles.infoBox}>
+            <Ionicons name="mail-open" size={20} color={colors.primary} />
+            <TText style={{ flex: 1, color: colors.text, fontSize: 13, lineHeight: 20 }}>
+              आपके ईमेल पर भेजा गया <TText weight="bold" style={{ color: colors.primary }}>6 अंकों का कोड</TText> और नया पासवर्ड भरें। कोड 15 मिनट तक मान्य है। स्पैम फ़ोल्डर भी देख लें।
+            </TText>
+          </View>
 
-          <Label text="रीसेट टोकन" />
+          <Label text="ईमेल" />
           <View style={styles.inputBox}>
-            <Ionicons name="key" size={18} color={colors.muted} />
+            <Ionicons name="mail" size={18} color={colors.muted} />
             <TextInput
-              testID="reset-token-input"
-              value={token}
-              onChangeText={setToken}
-              placeholder="ईमेल से कॉपी किया टोकन"
+              testID="reset-email-input"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="email@example.com"
               placeholderTextColor={colors.muted}
+              keyboardType="email-address"
               autoCapitalize="none"
+              autoComplete="email"
               style={styles.input}
             />
           </View>
 
-          <Label text="नया पासवर्ड" />
+          <Label text="6-अंकीय कोड" />
+          <View style={[styles.inputBox, { paddingHorizontal: 18 }]}>
+            <Ionicons name="key" size={18} color={colors.muted} />
+            <TextInput
+              ref={otpRef}
+              testID="reset-otp-input"
+              value={otp}
+              onChangeText={(t) => setOtp(t.replace(/[^0-9]/g, "").slice(0, 6))}
+              placeholder="123456"
+              placeholderTextColor={colors.muted}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoComplete="one-time-code"
+              textContentType="oneTimeCode"
+              style={[styles.input, { letterSpacing: 8, fontSize: 22, fontFamily: fonts.bodyBold, textAlign: "center" }]}
+            />
+          </View>
+
+          <Label text="नया पासवर्ड (कम से कम 8 अक्षर)" />
           <View style={styles.inputBox}>
             <Ionicons name="lock-closed" size={18} color={colors.muted} />
             <TextInput
@@ -99,6 +134,10 @@ export default function Reset() {
           </View>
 
           <Button label="पासवर्ड बदलें" icon="checkmark-circle" onPress={submit} loading={loading} style={{ marginTop: spacing.xl }} testID="reset-submit-btn" />
+
+          <Pressable onPress={() => router.push("/auth/forgot")} style={{ alignSelf: "center", marginTop: 18, padding: 8 }}>
+            <TText weight="bold" style={{ color: colors.muted, fontSize: 13 }}>कोड दोबारा भेजें</TText>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -112,6 +151,7 @@ function Label({ text }: { text: string }) {
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: spacing.lg },
   back: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border },
+  infoBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: radius.md, backgroundColor: colors.primary + "0E", borderWidth: 1, borderColor: colors.primary + "20", marginBottom: 8, alignItems: "flex-start" },
   inputBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, paddingHorizontal: 14 },
   input: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 15, color: colors.text, paddingVertical: 14 },
 });

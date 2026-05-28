@@ -3,7 +3,7 @@
  */
 import React, { useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, TText } from "@/src/components/ui";
@@ -66,18 +66,20 @@ export default function Forgot() {
           ) : (
             <View style={{ alignItems: "center", paddingTop: 30 }}>
               <View style={styles.successCircle}>
-                <Ionicons name="checkmark" size={36} color="#fff" />
+                <Ionicons name="mail" size={36} color="#fff" />
               </View>
-              <TText weight="display" style={{ fontSize: 20, marginTop: 20, textAlign: "center" }}>लिंक भेज दिया</TText>
-              <TText style={{ color: colors.muted, marginTop: 8, textAlign: "center", lineHeight: 22 }}>
-                अगर यह ईमेल पंजीकृत है, तो आपको पासवर्ड रीसेट का लिंक मिल जाएगा।
+              <TText weight="display" style={{ fontSize: 20, marginTop: 20, textAlign: "center" }}>कोड भेज दिया</TText>
+              <TText style={{ color: colors.muted, marginTop: 8, textAlign: "center", lineHeight: 22, paddingHorizontal: 12 }}>
+                अगर यह ईमेल पंजीकृत है, तो आपको 6-अंकीय कोड वाला ईमेल मिल जाएगा। स्पैम फ़ोल्डर भी देखें।
               </TText>
-              <Link href="/auth/reset" asChild>
-                <Pressable style={{ marginTop: 24 }}>
-                  <TText weight="bold" style={{ color: colors.primary, fontSize: 14 }}>मेरे पास टोकन है — रीसेट करें</TText>
-                </Pressable>
-              </Link>
-              <Pressable onPress={() => router.replace("/auth/login")} style={{ marginTop: 12 }}>
+              <Button
+                label="कोड डालें"
+                icon="key"
+                onPress={() => router.push({ pathname: "/auth/reset", params: { email: email.trim().toLowerCase() } })}
+                style={{ marginTop: 24, alignSelf: "stretch" }}
+                testID="forgot-go-reset"
+              />
+              <Pressable onPress={() => router.replace("/auth/login")} style={{ marginTop: 12, padding: 8 }}>
                 <TText weight="bold" style={{ color: colors.muted, fontSize: 13 }}>लॉग इन पर वापस</TText>
               </Pressable>
             </View>

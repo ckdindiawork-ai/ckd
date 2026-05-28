@@ -6,6 +6,7 @@ import os
 import uuid
 import secrets
 import logging
+import random
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
@@ -20,6 +21,7 @@ import httpx
 import jwt
 import cloudinary
 import cloudinary.uploader
+import resend
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -30,12 +32,16 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGO = "HS256"
 JWT_EXPIRES_DAYS = 30
-RESET_TOKEN_TTL_MIN = 30
+RESET_TOKEN_TTL_MIN = 15
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ckdindia.work@gmail.com")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "INdr@#1234")
 VIDEO_MAX_SIZE_MB = int(os.environ.get("VIDEO_MAX_SIZE_MB", 50))
 IMAGE_MAX_SIZE_MB = int(os.environ.get("IMAGE_MAX_SIZE_MB", 10))
 EMERGENT_OAUTH_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM = os.environ.get("RESEND_FROM", "CKD <onboarding@resend.dev>")
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 cloudinary.config(
     cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"],
@@ -112,7 +118,8 @@ class ForgotIn(BaseModel):
 
 
 class ResetIn(BaseModel):
-    token: str
+    email: EmailStr
+    otp: str
     new_password: str
 
 
@@ -327,35 +334,105 @@ async def login(payload: LoginIn):
     return {"token": token, "user": to_public_user(user), "is_new_user": False}
 
 
+# ---------- Email (Resend) ----------
+def _email_html(name: str, otp: str) -> str:
+    """Hindi password-reset email, mobile-responsive inline-CSS template."""
+    return f"""<!DOCTYPE html>
+<html lang="hi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+        <tr><td style="background:linear-gradient(135deg,#3A1C71 0%,#1a0a4a 100%);padding:28px 20px;text-align:center;">
+          <div style="color:#F4B400;font-size:13px;letter-spacing:2px;font-weight:700;">कॉकरोच क्रांति दल</div>
+          <div style="color:#fff;font-size:24px;font-weight:700;margin-top:6px;">पासवर्ड रीसेट</div>
+        </td></tr>
+        <tr><td style="padding:28px 28px 8px 28px;color:#1F2937;font-size:15px;line-height:1.6;">
+          नमस्ते <strong>{name or 'क्रांतिकारी'}</strong>,<br><br>
+          हमें आपके CKD खाते के लिए पासवर्ड रीसेट करने का अनुरोध मिला है। नीचे दिया गया <strong>6-अंकीय कोड</strong> ऐप में डालकर नया पासवर्ड बनाएँ।
+        </td></tr>
+        <tr><td style="padding:18px 28px;text-align:center;">
+          <div style="display:inline-block;background:#F4B400;color:#3A1C71;font-size:36px;font-weight:800;letter-spacing:10px;padding:18px 28px;border-radius:12px;font-family:monospace;">{otp}</div>
+        </td></tr>
+        <tr><td style="padding:8px 28px 24px 28px;color:#6B7280;font-size:13px;line-height:1.6;">
+          ⏱ यह कोड <strong>{RESET_TOKEN_TTL_MIN} मिनट</strong> तक मान्य है।<br>
+          🔒 अगर यह अनुरोध आपने नहीं किया, तो इस मेल को अनदेखा कर दें — आपका खाता सुरक्षित है।
+        </td></tr>
+        <tr><td style="background:#F9FAFB;padding:18px 28px;color:#9CA3AF;font-size:12px;text-align:center;border-top:1px solid #E5E7EB;">
+          युवा जागे, देश बदले<br>
+          © CKD · onboarding@resend.dev
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+
+def send_password_reset_email(to_email: str, name: str, otp: str) -> bool:
+    """Send the 6-digit OTP via Resend. Returns True/False; never raises."""
+    if not RESEND_API_KEY:
+        log.warning("RESEND_API_KEY not set — cannot send password reset email")
+        return False
+    try:
+        params: dict = {
+            "from": RESEND_FROM,
+            "to": [to_email],
+            "subject": "CKD पासवर्ड रीसेट कोड",
+            "html": _email_html(name, otp),
+        }
+        result = resend.Emails.send(params)
+        log.info(f"[resend] sent reset email to {to_email} id={result.get('id') if isinstance(result, dict) else result}")
+        return True
+    except Exception as e:
+        log.exception(f"[resend] FAILED sending reset email to {to_email}: {e}")
+        return False
+
+
 @api.post("/auth/forgot-password")
 async def forgot_password(payload: ForgotIn):
     email = payload.email.lower().strip()
     user = await db.users.find_one({"email": email}, {"_id": 0})
     # Always return same response (don't leak whether email exists)
     if user:
-        raw_token = secrets.token_urlsafe(32)
-        token_hash = hash_password(raw_token)
+        # 6-digit numeric OTP
+        otp = f"{random.randint(0, 999999):06d}"
+        otp_hash = hash_password(otp)
+        # Invalidate any older unused codes for this user (one active code at a time)
+        await db.password_resets.update_many(
+            {"user_id": user["id"], "used": False},
+            {"$set": {"used": True, "used_at": now_iso(), "invalidated": True}},
+        )
         await db.password_resets.insert_one({
             "id": new_id(),
             "user_id": user["id"],
             "email": email,
-            "token_hash": token_hash,
+            "token_hash": otp_hash,
             "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MIN)).isoformat(),
             "used": False,
             "created_at": now_iso(),
         })
-        # TODO: send via real email provider. For now log it.
-        reset_link = f"ckd://reset?email={email}&token={raw_token}"
-        log.warning(f"[PASSWORD RESET] email={email} token={raw_token} link={reset_link}")
-    return {"ok": True, "message": "अगर यह ईमेल पंजीकृत है तो पासवर्ड रीसेट लिंक भेज दिया गया है।"}
+        sent = send_password_reset_email(email, user.get("name") or "", otp)
+        if not sent:
+            # Still log so admin can manually rescue
+            log.warning(f"[PASSWORD RESET] (email failed - manual) email={email} otp={otp}")
+    return {"ok": True, "message": "अगर यह ईमेल पंजीकृत है तो रीसेट कोड भेज दिया गया है। अपना इनबॉक्स (और स्पैम फ़ोल्डर) देखें।"}
 
 
 @api.post("/auth/reset-password", response_model=TokenOut)
 async def reset_password(payload: ResetIn):
     if len(payload.new_password) < 8:
         raise HTTPException(400, "नया पासवर्ड कम से कम 8 अक्षरों का होना चाहिए")
-    # Find a non-used non-expired reset where the raw token verifies
-    cursor = db.password_resets.find({"used": False}, {"_id": 0}).sort("created_at", -1).limit(50)
+    if not payload.otp or len(payload.otp.strip()) != 6 or not payload.otp.strip().isdigit():
+        raise HTTPException(400, "कोड 6 अंकों का होना चाहिए")
+    email = payload.email.lower().strip()
+    otp = payload.otp.strip()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user:
+        # Generic message to prevent enumeration
+        raise HTTPException(400, "कोड अमान्य या समय-समाप्त है")
+    # Find an active reset for this user where the OTP matches
+    cursor = db.password_resets.find({"user_id": user["id"], "used": False}, {"_id": 0}).sort("created_at", -1).limit(5)
     rec = None
     async for r in cursor:
         try:
@@ -364,14 +441,11 @@ async def reset_password(payload: ResetIn):
             continue
         if exp < datetime.now(timezone.utc):
             continue
-        if verify_password(payload.token, r["token_hash"]):
+        if verify_password(otp, r["token_hash"]):
             rec = r
             break
     if not rec:
-        raise HTTPException(400, "रीसेट लिंक अमान्य या समय-समाप्त है")
-    user = await db.users.find_one({"id": rec["user_id"]}, {"_id": 0})
-    if not user:
-        raise HTTPException(404, "उपयोगकर्ता नहीं मिला")
+        raise HTTPException(400, "कोड अमान्य या समय-समाप्त है")
     await db.users.update_one({"id": user["id"]}, {"$set": {"password_hash": hash_password(payload.new_password), "auth_provider": "password"}})
     await db.password_resets.update_one({"id": rec["id"]}, {"$set": {"used": True, "used_at": now_iso()}})
     fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
