@@ -90,20 +90,26 @@ export default function Admin() {
         </View>
       </LinearGradient>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 8, paddingVertical: 12 }}>
-        {[
-          { k: "dashboard", l: "डैशबोर्ड", i: "stats-chart" },
-          { k: "members", l: "सदस्य", i: "people" },
-          { k: "campaigns", l: "अभियान", i: "megaphone" },
-          { k: "moderation", l: "रिपोर्ट", i: "flag" },
-          { k: "announcements", l: "घोषणा", i: "notifications" },
-        ].map((t) => (
-          <Pressable key={t.k} onPress={() => setTab(t.k as Tab)} style={[styles.tabPill, tab === t.k && styles.tabPillActive]} testID={`admin-tab-${t.k}`}>
-            <Ionicons name={t.i as any} size={14} color={tab === t.k ? "#fff" : colors.primary} />
-            <TText weight="bold" style={{ color: tab === t.k ? "#fff" : colors.primary, fontSize: 12 }}>{t.l}</TText>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <View style={{ backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: spacing.md, paddingVertical: 10, alignItems: "center", gap: 6 }}
+        >
+          {[
+            { k: "dashboard", l: "डैशबोर्ड", i: "stats-chart" },
+            { k: "members", l: "सदस्य", i: "people" },
+            { k: "campaigns", l: "अभियान", i: "megaphone" },
+            { k: "moderation", l: "रिपोर्ट", i: "flag" },
+            { k: "announcements", l: "घोषणा", i: "notifications" },
+          ].map((t) => (
+            <Pressable key={t.k} onPress={() => setTab(t.k as Tab)} style={[styles.tabPill, tab === t.k && styles.tabPillActive]} testID={`admin-tab-${t.k}`}>
+              <Ionicons name={t.i as any} size={13} color={tab === t.k ? "#fff" : colors.primary} />
+              <TText weight="bold" style={{ color: tab === t.k ? "#fff" : colors.primary, fontSize: 12, includeFontPadding: false }}>{t.l}</TText>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: 12 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         {tab === "dashboard" && stats && (
@@ -251,9 +257,10 @@ export default function Admin() {
                       <TText style={{ color: colors.muted, fontSize: 11 }}>• {timeAgo(a.created_at)}</TText>
                     </View>
                   </View>
-                  <View style={{ flexDirection: "column", gap: 6 }}>
-                    <Pressable onPress={() => { setEditingAnnounce(a); setShowAnnounceModal(true); }} style={styles.iconBtn} testID={`admin-announce-edit-${a.id}`}>
-                      <Ionicons name="create" size={16} color={colors.primary} />
+                  <View style={{ flexDirection: "column", gap: 8, alignItems: "stretch" }}>
+                    <Pressable onPress={() => { setEditingAnnounce(a); setShowAnnounceModal(true); }} style={styles.editBtn} testID={`admin-announce-edit-${a.id}`}>
+                      <Ionicons name="create-outline" size={16} color={colors.primary} />
+                      <TText weight="bold" style={{ color: colors.primary, fontSize: 11 }}>संपादन</TText>
                     </Pressable>
                     <Pressable onPress={() => {
                       Alert.alert("घोषणा हटाएँ?", `"${a.title}" स्थायी रूप से हटा दी जाएगी।`, [
@@ -262,8 +269,9 @@ export default function Admin() {
                           try { await api.del(`/admin/announcements/${a.id}`); await load(); } catch (e: any) { Alert.alert("त्रुटि", e.message); }
                         } },
                       ]);
-                    }} style={[styles.iconBtn, { backgroundColor: "#FFE5E5" }]} testID={`admin-announce-del-${a.id}`}>
-                      <Ionicons name="trash" size={16} color="#D32F2F" />
+                    }} style={styles.deleteBtn} testID={`admin-announce-del-${a.id}`}>
+                      <Ionicons name="trash-outline" size={16} color="#fff" />
+                      <TText weight="bold" style={{ color: "#fff", fontSize: 11 }}>हटाएँ</TText>
                     </Pressable>
                   </View>
                 </View>
@@ -429,7 +437,7 @@ const styles = StyleSheet.create({
   hdr: { paddingBottom: 4 },
   hdrRow: { flexDirection: "row", alignItems: "center", gap: 12, padding: spacing.lg },
   back: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  tabPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.surface },
+  tabPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.primary + "60", backgroundColor: colors.surface },
   tabPillActive: { backgroundColor: colors.primary },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.surface, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
   mAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" },
@@ -444,4 +452,6 @@ const styles = StyleSheet.create({
   featuredRow: { flexDirection: "row", gap: 10, alignItems: "center", padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.accent + "10" },
   checkbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: colors.accent, alignItems: "center", justifyContent: "center" },
   iconBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" },
+  editBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.primary + "12", borderWidth: 1, borderColor: colors.primary + "30", minWidth: 78 },
+  deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#D32F2F", minWidth: 78 },
 });
