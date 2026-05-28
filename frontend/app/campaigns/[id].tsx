@@ -10,6 +10,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { Button, Card, Pill, TText } from "@/src/components/ui";
 import { VideoPlayer } from "@/src/components/VideoPlayer";
+import { MediaCarousel } from "@/src/components/MediaCarousel";
 import { api } from "@/src/api";
 import { useAuth } from "@/src/auth";
 import { useToast } from "@/src/components/Toast";
@@ -122,22 +123,34 @@ export default function CampaignDetail() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["bottom"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView>
-          <View style={styles.hero}>
-            {c.cover_url && <Image source={{ uri: c.cover_url }} style={styles.coverImage} />}
-            <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.7)"]} style={StyleSheet.absoluteFill} />
-            <SafeAreaView edges={["top"]} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-              <Pressable onPress={() => router.back()} style={styles.back} testID="campaign-back">
-                <Ionicons name="arrow-back" size={22} color="#fff" />
-              </Pressable>
-            </SafeAreaView>
-            <View style={styles.heroBottom}>
-              <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-                <Pill label={c.location} icon="location" bg="rgba(255,255,255,0.2)" color="#fff" />
-                <Pill label={formatDate(c.date)} icon="calendar" bg="rgba(255,255,255,0.2)" color="#fff" />
+          {/* Phase 2/P3 — multi-media hero carousel
+              Falls back to legacy cover_url if media[] not provided yet.
+              Single-image mode renders as a normal full-bleed image (no dots). */}
+          {(() => {
+            const mediaList = Array.isArray(c.media) && c.media.length > 0
+              ? c.media
+              : (c.cover_url ? [{ type: "image" as const, url: c.cover_url }] : []);
+            return (
+              <View style={styles.hero}>
+                {mediaList.length > 0 ? (
+                  <MediaCarousel items={mediaList} height={styles.hero.height as number} />
+                ) : null}
+                <LinearGradient colors={["rgba(0,0,0,0.5)", "transparent", "rgba(0,0,0,0.7)"]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+                <SafeAreaView edges={["top"]} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+                  <Pressable onPress={() => router.back()} style={styles.back} testID="campaign-back">
+                    <Ionicons name="arrow-back" size={22} color="#fff" />
+                  </Pressable>
+                </SafeAreaView>
+                <View style={styles.heroBottom} pointerEvents="box-none">
+                  <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+                    <Pill label={c.location} icon="location" bg="rgba(255,255,255,0.2)" color="#fff" />
+                    <Pill label={formatDate(c.date)} icon="calendar" bg="rgba(255,255,255,0.2)" color="#fff" />
+                  </View>
+                  <TText weight="display" style={{ color: "#fff", fontSize: 26, marginTop: 8 }}>{c.title}</TText>
+                </View>
               </View>
-              <TText weight="display" style={{ color: "#fff", fontSize: 26, marginTop: 8 }}>{c.title}</TText>
-            </View>
-          </View>
+            );
+          })()}
 
           <View style={{ padding: spacing.lg }}>
             <Card>

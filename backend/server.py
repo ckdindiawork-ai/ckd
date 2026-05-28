@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
@@ -144,15 +145,25 @@ class TokenOut(BaseModel):
     is_new_user: bool = False
 
 
+class CampaignMedia(BaseModel):
+    type: Literal["image", "video"]
+    url: str
+    thumbnail_url: Optional[str] = None
+    order: int = 0
+    is_cover: bool = False
+
+
 class CampaignIn(BaseModel):
     title: str
     description: str
     cover_url: Optional[str] = None
+    media: Optional[List[CampaignMedia]] = None  # Phase 2/P3 — multi-media support
     location: str
     state: Optional[str] = None
     date: str
     goal: Optional[str] = None
     is_featured: bool = False
+    is_draft: bool = False  # admin save-as-draft (kept un-published)
 
 
 class CampaignUpdateIn(BaseModel):
@@ -606,9 +617,18 @@ async def list_campaigns(city: Optional[str] = None, featured: bool = False, lim
 
 @api.post("/campaigns")
 async def create_campaign(payload: CampaignIn, admin: dict = Depends(require_admin)):
+    data = payload.dict()
+    # Phase 2/P3 — sync cover_url from media[is_cover] for backward compat
+    media = data.get("media") or []
+    if media:
+        for m in media:
+            m.setdefault("order", 0)
+        cover_item = next((m for m in media if m.get("is_cover")), media[0])
+        if not data.get("cover_url") and cover_item:
+            data["cover_url"] = cover_item.get("url")
     doc = {
         "id": new_id(),
-        **payload.dict(),
+        **data,
         "created_by": admin["id"],
         "created_at": now_iso(),
         "members": [],
@@ -616,8 +636,9 @@ async def create_campaign(payload: CampaignIn, admin: dict = Depends(require_adm
     }
     await db.campaigns.insert_one(dict(doc))
     doc.pop("_id", None)
-    # Broadcast announcement (admin: all members)
-    await push_notification(None, "campaign_new", "नया अभियान!", payload.title, {"campaign_id": doc["id"]})
+    # Skip broadcast for drafts (admin can preview before publishing)
+    if not data.get("is_draft"):
+        await push_notification(None, "campaign_new", "नया अभियान!", payload.title, {"campaign_id": doc["id"]})
     return doc
 
 
@@ -1333,6 +1354,11 @@ async def on_start():
 
 
 app.include_router(api)
+
+# Phase 2/P2 — Share & deep-link landing pages (mounted at app root, not /api)
+from share_routes import build_router as build_share_router, attach_db as _share_attach_db
+_share_attach_db(db)
+app.include_router(build_share_router())
 
 app.add_middleware(
     CORSMiddleware,

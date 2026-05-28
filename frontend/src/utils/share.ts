@@ -14,7 +14,18 @@ import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
 import { LOGO_URL } from "@/src/theme";
 
-const APP_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://ckd.app";
+// Backend host that serves /api/share/* — produces WhatsApp/Telegram rich
+// previews with OG meta and an Android deep-link redirect. Once
+// app.ckdindia.com DNS is wired, switch SHARE_HOST to that domain so links
+// are short + branded.
+const SHARE_HOST =
+  process.env.EXPO_PUBLIC_SHARE_HOST ||
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  "https://grassroot-action.preview.emergentagent.com";
+
+function buildShareUrl(kind: "campaign" | "issue", id: string): string {
+  return `${SHARE_HOST.replace(/\/$/, "")}/api/share/${kind}/${id}`;
+}
 
 export type ShareResult =
   | { ok: true; mode: "native" | "web-share" | "clipboard" }
@@ -25,7 +36,7 @@ export type SaveResult =
   | { ok: false; mode: "cancelled" | "error" };
 
 export function buildCampaignCaption(c: { id?: string; title: string; description: string; date?: string; location?: string }) {
-  const link = `${APP_URL}/campaigns/${c.id || ""}`;
+  const link = c.id ? buildShareUrl("campaign", c.id) : "";
   return [
     `🚩 ${c.title}`,
     c.location && c.date ? `📍 ${c.location}  •  📅 ${c.date}` : c.location ? `📍 ${c.location}` : c.date ? `📅 ${c.date}` : "",
@@ -39,7 +50,7 @@ export function buildCampaignCaption(c: { id?: string; title: string; descriptio
 }
 
 export function buildIssueCaption(i: { id?: string; title: string; description: string; city?: string; area?: string; state?: string; status?: string }) {
-  const link = `${APP_URL}/issues/${i.id || ""}`;
+  const link = i.id ? buildShareUrl("issue", i.id) : "";
   const statusLabel = i.status === "resolved" ? "हल हो गई" : i.status === "in_progress" ? "काम चालू" : "खुली";
   const loc = [i.area, i.city, i.state].filter(Boolean).join(", ");
   return [
